@@ -101,7 +101,7 @@ func TestAddRouteLookup(t *testing.T) {
 	}
 	for _, tc := range tests {
 		ps := make(Params, 0, r.maxParams)
-		hs, tsr := r.Lookup("GET", tc.path, &ps)
+		hs, _, tsr := r.Lookup("GET", tc.path, &ps)
 		if (hs != nil) != tc.found || tsr != tc.tsr {
 			t.Errorf("%s: found=%v tsr=%v, want %v/%v", tc.path, hs != nil, tsr, tc.found, tc.tsr)
 		}
@@ -125,7 +125,7 @@ func TestAddRouteSplitOrders(t *testing.T) {
 	} {
 		r := newRouter(t, order...)
 		for _, p := range order {
-			if hs, _ := r.Lookup("GET", p, nil); hs == nil {
+			if hs, _, _ := r.Lookup("GET", p, nil); hs == nil {
 				t.Errorf("order %v: %s not found", order, p)
 			}
 		}
@@ -140,10 +140,10 @@ func TestAddRouteMethods(t *testing.T) {
 	if len(r.trees) != 2 {
 		t.Errorf("trees = %d, want 2", len(r.trees))
 	}
-	if hs, _ := r.Lookup("GET", "/y", nil); hs == nil {
+	if hs, _, _ := r.Lookup("GET", "/y", nil); hs == nil {
 		t.Error("GET /y not found")
 	}
-	if hs, _ := r.Lookup("DELETE", "/x", nil); hs != nil {
+	if hs, _, _ := r.Lookup("DELETE", "/x", nil); hs != nil {
 		t.Error("DELETE /x should not match")
 	}
 }
@@ -213,7 +213,7 @@ func TestAddRoutePriorityOrdering(t *testing.T) {
 		t.Errorf("indices = %q, want the hot branch first", root.indices)
 	}
 	for _, p := range []string{"/zebra", "/api/v0", "/api/v9"} {
-		if hs, _ := r.Lookup("GET", p, nil); hs == nil {
+		if hs, _, _ := r.Lookup("GET", p, nil); hs == nil {
 			t.Errorf("%s not found after reordering", p)
 		}
 	}
@@ -242,7 +242,7 @@ func TestAddRouteBulk(t *testing.T) {
 	}
 	for path, want := range probes {
 		ps := make(Params, 0, r.maxParams+1)
-		hs, _ := r.Lookup("GET", path, &ps)
+		hs, _, _ := r.Lookup("GET", path, &ps)
 		if hs == nil {
 			t.Errorf("%s: not found", path)
 		}

@@ -52,7 +52,7 @@ func benchLookup(b *testing.B, path string) {
 	b.ResetTimer()
 	for b.Loop() {
 		ps = ps[:0]
-		sinkHandlers, _ = r.Lookup(http.MethodGet, path, &ps)
+		sinkHandlers, _, _ = r.Lookup(http.MethodGet, path, &ps)
 	}
 }
 

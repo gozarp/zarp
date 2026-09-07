@@ -1,7 +1,5 @@
 package nesting
 
-type HandlerFunc func(*Context)
-
 type Param struct {
 	Key, Value string
 }
@@ -239,6 +237,8 @@ func (r *Router) addRoute(method, path string, handlers []HandlerFunc) {
 		panic("gomicro: path must begin with '/' in path '" + path + "'")
 	case len(handlers) == 0:
 		panic("gomicro: there must be at least one handler for path '" + path + "'")
+	case len(handlers) >= int(abortIndex):
+		panic("gomicro: too many handlers for path '" + path + "'")
 	}
 
 	// Sized once here so Engine can allocate a Context's Params buffer exactly.
@@ -365,20 +365,23 @@ walk:
 // allocation; pass a zero-length slice whose backing array holds at least
 // r.maxParams entries. It may be nil when the caller does not want params.
 //
+// fullPath is the route pattern that matched, e.g. "/user/:id", for logging and
+// metrics.
+//
 // tsr ("trailing slash redirect") reports that path would have matched with a
 // trailing slash added or removed. It is a hint only: Lookup never writes a
 // response, and whether to redirect is Engine's decision.
-func (r *Router) Lookup(method, path string, params *Params) (handlers []HandlerFunc, tsr bool) {
+func (r *Router) Lookup(method, path string, params *Params) (handlers []HandlerFunc, fullPath string, tsr bool) {
 	for i := range r.trees {
 		if r.trees[i].method == method {
 			return r.trees[i].root.getValue(path, params)
 		}
 	}
-	return nil, false
+	return nil, "", false
 }
 
 // getValue walks the tree from n, consuming path as it descends.
-func (n *node) getValue(path string, params *Params) (handlers []HandlerFunc, tsr bool) {
+func (n *node) getValue(path string, params *Params) (handlers []HandlerFunc, fullPath string, tsr bool) {
 walk:
 	for {
 		prefix := n.path
@@ -400,7 +403,7 @@ walk:
 					// Nothing matched. The path may be this node's route with
 					// one extra trailing slash.
 					tsr = path == "/" && n.handlers != nil
-					return nil, tsr
+					return nil, "", tsr
 				}
 
 				n = n.children[0]
@@ -424,24 +427,24 @@ walk:
 						}
 						// Path continues but the tree does not.
 						tsr = len(path) == end+1
-						return nil, tsr
+						return nil, "", tsr
 					}
 
 					if n.handlers != nil {
-						return n.handlers, false
+						return n.handlers, n.fullPath, false
 					}
 					if len(n.children) == 1 {
 						n = n.children[0]
 						tsr = n.path == "/" && n.handlers != nil
 					}
-					return nil, tsr
+					return nil, "", tsr
 
 				case catchAll:
 					// Everything left, leading '/' included, is the value.
 					if params != nil {
 						*params = append(*params, Param{Key: n.path[2:], Value: path})
 					}
-					return n.handlers, false
+					return n.handlers, n.fullPath, false
 
 				default:
 					panic("gomicro: invalid node type")
@@ -449,11 +452,11 @@ walk:
 			}
 		} else if path == prefix {
 			if n.handlers != nil {
-				return n.handlers, false
+				return n.handlers, n.fullPath, false
 			}
 
 			if path == "/" && n.wildChild && n.nType != root {
-				return nil, true
+				return nil, "", true
 			}
 
 			// No handlers here: this path plus a trailing slash may be a route.
@@ -462,10 +465,10 @@ walk:
 					n = n.children[i]
 					tsr = (len(n.path) == 1 && n.handlers != nil) ||
 						(n.nType == catchAll && n.children[0].handlers != nil)
-					return nil, tsr
+					return nil, "", tsr
 				}
 			}
-			return nil, false
+			return nil, "", false
 		}
 
 		// No match. Recommend a redirect to the same path with a trailing
@@ -473,6 +476,6 @@ walk:
 		tsr = path == "/" ||
 			(len(prefix) == len(path)+1 && prefix[len(path)] == '/' &&
 				path == prefix[:len(path)] && n.handlers != nil)
-		return nil, tsr
+		return nil, "", tsr
 	}
 }
