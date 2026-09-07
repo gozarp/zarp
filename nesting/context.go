@@ -2,11 +2,20 @@ package nesting
 
 import (
 	"bufio"
+	"bytes"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"maps"
+	"mime/multipart"
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
 )
 
 const (
@@ -112,6 +121,7 @@ type Context struct {
 	Params     Params
 	handlers   []HandlerFunc
 	queryCache url.Values
+	formCache  url.Values
 	keys       map[string]any
 	engine     any // becomes *Engine in build order step 3
 	fullPath   string
@@ -129,7 +139,500 @@ func (c *Context) reset(w http.ResponseWriter, r *http.Request) {
 	c.Params = c.Params[:0] // keep the backing array sized by Router.maxParams
 	c.handlers = nil
 	c.queryCache = nil
+	c.formCache = nil
 	c.keys = nil
 	c.fullPath = ""
 	c.index = -1
+}
+
+// ---------------------------------------------------------------- engine hooks
+
+// defaultMultipartMemory caps how much of a multipart body is buffered in
+// memory before spilling to temporary files.
+const defaultMultipartMemory = 32 << 20 // 32 MB
+
+// engineOptions is the slice of *Engine that Context reads. It exists as an
+// interface only because Engine does not exist yet (build order step 3); once
+// it does, c.engine becomes *Engine and this can go away.
+type engineOptions interface {
+	trustForwardedForHeader() bool
+	maxMultipartMemory() int64
+}
+
+func (c *Context) options() (engineOptions, bool) {
+	o, ok := c.engine.(engineOptions)
+	return o, ok
+}
+
+func (c *Context) maxMultipartMemory() int64 {
+	if o, ok := c.options(); ok {
+		return o.maxMultipartMemory()
+	}
+	return defaultMultipartMemory
+}
+
+// ---------------------------------------------------------------- params
+
+// Param returns the value of the URL parameter named key, or "" if the matched
+// route has no such parameter.
+func (c *Context) Param(key string) string {
+	return c.Params.ByName(key)
+}
+
+// FullPath returns the matched route pattern, e.g. "/user/:id" — not the
+// request URL. Log this rather than the URL: it has bounded cardinality.
+func (c *Context) FullPath() string {
+	return c.fullPath
+}
+
+// ---------------------------------------------------------------- query
+
+// initQueryCache parses the query string once per request. url.Values costs a
+// map allocation, so a handler reading three parameters should pay for it once,
+// not three times.
+func (c *Context) initQueryCache() {
+	if c.queryCache == nil {
+		if c.Request != nil && c.Request.URL != nil {
+			c.queryCache = c.Request.URL.Query()
+		} else {
+			c.queryCache = url.Values{}
+		}
+	}
+}
+
+// Query returns the first value for key, or "".
+func (c *Context) Query(key string) string {
+	v, _ := c.GetQuery(key)
+	return v
+}
+
+// DefaultQuery returns the first value for key, or def when it is absent. A
+// present but empty parameter ("?x=") returns "", not def.
+func (c *Context) DefaultQuery(key, def string) string {
+	if v, ok := c.GetQuery(key); ok {
+		return v
+	}
+	return def
+}
+
+// GetQuery returns the first value for key and whether it was present at all.
+func (c *Context) GetQuery(key string) (string, bool) {
+	values, ok := c.GetQueryArray(key)
+	if !ok {
+		return "", false
+	}
+	return values[0], true
+}
+
+// QueryArray returns every value for key.
+func (c *Context) QueryArray(key string) []string {
+	values, _ := c.GetQueryArray(key)
+	return values
+}
+
+// GetQueryArray returns every value for key and whether key was present.
+func (c *Context) GetQueryArray(key string) ([]string, bool) {
+	c.initQueryCache()
+	values, ok := c.queryCache[key]
+	if !ok || len(values) == 0 {
+		return nil, false
+	}
+	return values, true
+}
+
+// ---------------------------------------------------------------- form
+
+// initFormCache parses the request body once. ParseMultipartForm handles both
+// urlencoded and multipart bodies, so a non-multipart body is not an error.
+func (c *Context) initFormCache() {
+	if c.formCache != nil {
+		return
+	}
+	c.formCache = url.Values{}
+	if c.Request == nil {
+		return
+	}
+	if err := c.Request.ParseMultipartForm(c.maxMultipartMemory()); err != nil &&
+		!errors.Is(err, http.ErrNotMultipart) {
+		// A malformed or oversized body leaves the cache empty: the handler
+		// sees absent values rather than a panic.
+		if c.Request.PostForm == nil {
+			return
+		}
+	}
+	if c.Request.PostForm != nil {
+		c.formCache = c.Request.PostForm
+	}
+}
+
+// PostForm returns the first form value for key, or "".
+func (c *Context) PostForm(key string) string {
+	v, _ := c.GetPostForm(key)
+	return v
+}
+
+// DefaultPostForm returns the first form value for key, or def when absent.
+func (c *Context) DefaultPostForm(key, def string) string {
+	if v, ok := c.GetPostForm(key); ok {
+		return v
+	}
+	return def
+}
+
+// GetPostForm returns the first form value for key and whether it was present.
+func (c *Context) GetPostForm(key string) (string, bool) {
+	values, ok := c.GetPostFormArray(key)
+	if !ok {
+		return "", false
+	}
+	return values[0], true
+}
+
+// PostFormArray returns every form value for key.
+func (c *Context) PostFormArray(key string) []string {
+	values, _ := c.GetPostFormArray(key)
+	return values
+}
+
+// GetPostFormArray returns every form value for key and whether key was present.
+func (c *Context) GetPostFormArray(key string) ([]string, bool) {
+	c.initFormCache()
+	values, ok := c.formCache[key]
+	if !ok || len(values) == 0 {
+		return nil, false
+	}
+	return values, true
+}
+
+// FormFile returns the header of the first file uploaded under name.
+func (c *Context) FormFile(name string) (*multipart.FileHeader, error) {
+	if c.Request.MultipartForm == nil {
+		if err := c.Request.ParseMultipartForm(c.maxMultipartMemory()); err != nil {
+			return nil, err
+		}
+	}
+	f, fh, err := c.Request.FormFile(name)
+	if err != nil {
+		return nil, err
+	}
+	f.Close()
+	return fh, nil
+}
+
+// MultipartForm parses and returns the whole multipart form.
+func (c *Context) MultipartForm() (*multipart.Form, error) {
+	err := c.Request.ParseMultipartForm(c.maxMultipartMemory())
+	return c.Request.MultipartForm, err
+}
+
+// ---------------------------------------------------------------- keys
+
+// Set stores a value on this request, allocating the key map on first use: a
+// request that never calls Set never pays for it.
+func (c *Context) Set(key string, value any) {
+	if c.keys == nil {
+		c.keys = make(map[string]any)
+	}
+	c.keys[key] = value
+}
+
+// Get returns the value stored under key and whether it exists.
+func (c *Context) Get(key string) (any, bool) {
+	v, ok := c.keys[key]
+	return v, ok
+}
+
+// MustGet returns the value stored under key, panicking if it is absent.
+func (c *Context) MustGet(key string) any {
+	if v, ok := c.Get(key); ok {
+		return v
+	}
+	panic("gomicro: key " + strconv.Quote(key) + " does not exist")
+}
+
+// GetString returns the value stored under key as a string, or "".
+func (c *Context) GetString(key string) string {
+	v, _ := c.Get(key)
+	s, _ := v.(string)
+	return s
+}
+
+// GetBool returns the value stored under key as a bool, or false.
+func (c *Context) GetBool(key string) bool {
+	v, _ := c.Get(key)
+	b, _ := v.(bool)
+	return b
+}
+
+// GetInt returns the value stored under key as an int, or 0.
+func (c *Context) GetInt(key string) int {
+	v, _ := c.Get(key)
+	i, _ := v.(int)
+	return i
+}
+
+// GetInt64 returns the value stored under key as an int64, or 0.
+func (c *Context) GetInt64(key string) int64 {
+	v, _ := c.Get(key)
+	i, _ := v.(int64)
+	return i
+}
+
+// GetFloat64 returns the value stored under key as a float64, or 0.
+func (c *Context) GetFloat64(key string) float64 {
+	v, _ := c.Get(key)
+	f, _ := v.(float64)
+	return f
+}
+
+// GetDuration returns the value stored under key as a time.Duration, or 0.
+func (c *Context) GetDuration(key string) time.Duration {
+	v, _ := c.Get(key)
+	d, _ := v.(time.Duration)
+	return d
+}
+
+// ---------------------------------------------------------------- context.Context
+
+// Deadline implements context.Context, delegating to the request's context.
+func (c *Context) Deadline() (time.Time, bool) {
+	if c.Request == nil {
+		return time.Time{}, false
+	}
+	return c.Request.Context().Deadline()
+}
+
+// Done implements context.Context.
+func (c *Context) Done() <-chan struct{} {
+	if c.Request == nil {
+		return nil
+	}
+	return c.Request.Context().Done()
+}
+
+// Err implements context.Context.
+func (c *Context) Err() error {
+	if c.Request == nil {
+		return nil
+	}
+	return c.Request.Context().Err()
+}
+
+// Value implements context.Context. Keys set on this Context, then route
+// params, resolve first, so library code holding only a context.Context can
+// still read what middleware stored.
+func (c *Context) Value(key any) any {
+	if k, ok := key.(string); ok {
+		if v, exists := c.keys[k]; exists {
+			return v
+		}
+		if v, exists := c.Params.Get(k); exists {
+			return v
+		}
+	}
+	if c.Request == nil {
+		return nil
+	}
+	return c.Request.Context().Value(key)
+}
+
+// ---------------------------------------------------------------- request info
+
+func (c *Context) requestHeader(key string) string {
+	if c.Request == nil {
+		return ""
+	}
+	return c.Request.Header.Get(key)
+}
+
+// GetHeader returns a request header.
+func (c *Context) GetHeader(key string) string {
+	return c.requestHeader(key)
+}
+
+// ContentType returns the request media type with any parameters stripped.
+func (c *Context) ContentType() string {
+	ct := c.requestHeader("Content-Type")
+	if i := strings.IndexByte(ct, ';'); i >= 0 {
+		ct = ct[:i]
+	}
+	return strings.TrimSpace(ct)
+}
+
+// IsWebsocket reports whether the request is a WebSocket upgrade.
+func (c *Context) IsWebsocket() bool {
+	return strings.Contains(strings.ToLower(c.requestHeader("Connection")), "upgrade") &&
+		strings.EqualFold(c.requestHeader("Upgrade"), "websocket")
+}
+
+// ClientIP returns the client's address, consulting the usual proxy headers
+// first when the engine is configured to trust them.
+func (c *Context) ClientIP() string {
+	if c.trustForwardedFor() {
+		if ip := firstValidIP(c.requestHeader("X-Forwarded-For")); ip != "" {
+			return ip
+		}
+		if ip := firstValidIP(c.requestHeader("X-Real-Ip")); ip != "" {
+			return ip
+		}
+	}
+	if c.Request == nil {
+		return ""
+	}
+	addr := strings.TrimSpace(c.Request.RemoteAddr)
+	if ip, _, err := net.SplitHostPort(addr); err == nil {
+		return ip
+	}
+	return addr
+}
+
+// trustForwardedFor defaults to true, matching the flag's default on Engine.
+func (c *Context) trustForwardedFor() bool {
+	if o, ok := c.options(); ok {
+		return o.trustForwardedForHeader()
+	}
+	return true
+}
+
+// firstValidIP returns the first parseable address in a comma-separated header.
+func firstValidIP(header string) string {
+	for len(header) > 0 {
+		var part string
+		if i := strings.IndexByte(header, ','); i >= 0 {
+			part, header = header[:i], header[i+1:]
+		} else {
+			part, header = header, ""
+		}
+		if ip := strings.TrimSpace(part); net.ParseIP(ip) != nil {
+			return ip
+		}
+	}
+	return ""
+}
+
+// ---------------------------------------------------------------- response
+
+// Status records the response status. It is not sent until the first write or
+// WriteHeaderNow, so a later handler in the chain can still change it.
+func (c *Context) Status(code int) {
+	c.Writer.WriteHeader(code)
+}
+
+// Header sets a response header, or removes it when value is empty.
+func (c *Context) Header(key, value string) {
+	if value == "" {
+		c.Writer.Header().Del(key)
+		return
+	}
+	c.Writer.Header().Set(key, value)
+}
+
+// writeContentType sets the content type unless the handler already chose one.
+func (c *Context) writeContentType(value string) {
+	header := c.Writer.Header()
+	if len(header["Content-Type"]) == 0 {
+		header["Content-Type"] = []string{value}
+	}
+}
+
+// String writes a plain-text response. With no values it writes format as it
+// is, so the common case never reaches fmt.
+func (c *Context) String(code int, format string, values ...any) {
+	c.Status(code)
+	c.writeContentType("text/plain; charset=utf-8")
+	if len(values) == 0 {
+		c.writermem.WriteString(format)
+		return
+	}
+	fmt.Fprintf(c.Writer, format, values...)
+}
+
+// Data writes raw bytes with an explicit content type.
+func (c *Context) Data(code int, contentType string, data []byte) {
+	c.Status(code)
+	c.writeContentType(contentType)
+	c.Writer.Write(data)
+}
+
+// Redirect sends an HTTP redirect. It panics on a status that is not one.
+func (c *Context) Redirect(code int, location string) {
+	if (code < http.StatusMultipleChoices || code > http.StatusPermanentRedirect) &&
+		code != http.StatusCreated {
+		panic("gomicro: cannot redirect with status code " + strconv.Itoa(code))
+	}
+	c.Header("Location", location)
+	c.Status(code)
+	c.Writer.WriteHeaderNow()
+}
+
+// jsonBuffers backs JSON's encoding. Encoding into a pooled buffer rather than
+// straight to the writer costs about 8% on small payloads and buys two things
+// the streaming encoder cannot: a failed encode never commits a status code,
+// and the response carries a real Content-Length instead of being chunked.
+var jsonBuffers = sync.Pool{New: func() any { return new(bytes.Buffer) }}
+
+// maxPooledBuffer stops one huge response from pinning a huge buffer forever.
+const maxPooledBuffer = 64 << 10
+
+// autoContentLengthLimit mirrors net/http bufferBeforeChunkingSize: at or below
+// it the standard library sets Content-Length for us.
+const autoContentLengthLimit = 2048
+
+// JSON serialises obj and writes it with the given status code.
+func (c *Context) JSON(code int, obj any) {
+	buf := jsonBuffers.Get().(*bytes.Buffer)
+	buf.Reset()
+
+	if err := json.NewEncoder(buf).Encode(obj); err != nil {
+		releaseBuffer(buf)
+		// Nothing is on the wire yet, so the status can still be honest.
+		c.Status(http.StatusInternalServerError)
+		c.Writer.WriteHeaderNow()
+		return
+	}
+
+	// Encoder appends a newline; drop it so the body is exactly the value.
+	b := bytes.TrimSuffix(buf.Bytes(), []byte("\n"))
+
+	c.Status(code)
+	c.writeContentType("application/json; charset=utf-8")
+	// net/http buffers small responses and derives Content-Length itself; only
+	// a body past that buffer would otherwise be sent chunked. Setting the
+	// header unconditionally costs an allocation in textproto.MIMEHeader.Set
+	// for no gain on the common path.
+	if len(b) > autoContentLengthLimit {
+		c.Writer.Header().Set("Content-Length", strconv.Itoa(len(b)))
+	}
+	c.Writer.Write(b)
+	releaseBuffer(buf)
+}
+
+func releaseBuffer(buf *bytes.Buffer) {
+	if buf.Cap() <= maxPooledBuffer {
+		jsonBuffers.Put(buf)
+	}
+}
+
+// ---------------------------------------------------------------- copy
+
+// Copy returns a detached Context safe to use after the handler returns, in a
+// goroutine say. The original goes back to the pool and will be overwritten by
+// another request, so anything outliving the handler must use a copy.
+//
+// The copy cannot write a response: its Writer is nil and its chain is spent.
+func (c *Context) Copy() *Context {
+	cp := &Context{
+		Request:  c.Request,
+		engine:   c.engine,
+		fullPath: c.fullPath,
+		index:    abortIndex,
+	}
+	if len(c.Params) > 0 {
+		cp.Params = make(Params, len(c.Params))
+		copy(cp.Params, c.Params)
+	}
+	if len(c.keys) > 0 {
+		cp.keys = maps.Clone(c.keys)
+	}
+	return cp
 }
