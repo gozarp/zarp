@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/subhanjanops/gomicro"
-	"github.com/subhanjanops/loggy"
 )
 
 // Entry is one finished request, as the logger middleware sees it.
@@ -40,12 +39,37 @@ func (e Entry) Level() slog.Level {
 }
 
 // Sink receives each finished request. It is the seam between this middleware
-// and whatever does the logging: implement it — or use one of the adapters
-// below — and any logger works, with no dependency in either direction.
+// and whatever does the logging: implement it and any logger works, with no
+// dependency in either direction.
+//
+// Two adapters ship here — TextSink (the default) and SlogSink — both built on
+// the standard library, so this package stays dependency-free. Everything else
+// is a closure. For zerolog:
 //
 //	middleware.LoggerWith(middleware.SinkFunc(func(e middleware.Entry) {
-//		zlog.Info().Str("path", e.Path).Int("status", e.Status).Send()
+//		zlog.WithLevel(zerologLevel(e)).
+//			Str("method", e.Method).Str("path", e.Path).
+//			Int("status", e.Status).Dur("latency", e.Latency).
+//			Msg("request")
 //	}))
+//
+// For loggy (https://github.com/subhanjanOps/loggy), which is worth a look —
+// structured, zero-allocation, and faster than slog on this exact path:
+//
+//	func LoggySink(l loggy.Logger) middleware.Sink {
+//		return middleware.SinkFunc(func(e middleware.Entry) {
+//			ev := l.Info()
+//			switch e.Level() {
+//			case slog.LevelError:
+//				ev = l.Error()
+//			case slog.LevelWarn:
+//				ev = l.Warn()
+//			}
+//			ev.Str("method", e.Method).Str("path", e.Path).
+//				Int("status", e.Status).Dur("latency", e.Latency).
+//				Int("size", e.Size).Str("ip", e.ClientIP).Msg("request")
+//		})
+//	}
 type Sink interface {
 	LogRequest(Entry)
 }
@@ -58,7 +82,7 @@ func (f SinkFunc) LogRequest(e Entry) { f(e) }
 
 // LoggerConfig configures Logger.
 type LoggerConfig struct {
-	// Sink receives each entry. Defaults to LoggySink(loggy.Default()).
+	// Sink receives each entry. Defaults to TextSink(os.Stderr).
 	Sink Sink
 
 	// SkipPaths are request paths that produce no log line — health checks and
@@ -66,8 +90,12 @@ type LoggerConfig struct {
 	SkipPaths []string
 }
 
-// Logger returns middleware that logs every request through loggy's default
-// logger once the rest of the chain has run.
+// Logger returns middleware that logs every request to stderr as aligned text,
+// once the rest of the chain has run.
+//
+// The default deliberately uses no logging library: this package depends on
+// nothing outside the standard library, and the logger you already use plugs in
+// through Sink. See LoggerWith.
 func Logger() gomicro.HandlerFunc {
 	return LoggerWithConfig(LoggerConfig{})
 }
@@ -91,7 +119,7 @@ func LoggerWithWriter(out io.Writer) gomicro.HandlerFunc {
 func LoggerWithConfig(cfg LoggerConfig) gomicro.HandlerFunc {
 	sink := cfg.Sink
 	if sink == nil {
-		sink = LoggySink(loggy.Default())
+		sink = TextSink(os.Stderr)
 	}
 	// Copied so a later mutation of the caller's slice cannot change behaviour
 	// mid-flight. A short slice scan beats a map here: there are a handful of
@@ -138,29 +166,6 @@ func requestURL(c *gomicro.Context) string {
 }
 
 // ---------------------------------------------------------------- adapters
-
-// LoggySink logs through a loggy.Logger, one structured field per attribute.
-// This is the default, via loggy.Default().
-func LoggySink(l loggy.Logger) Sink {
-	return SinkFunc(func(e Entry) {
-		var ev *loggy.Event
-		switch e.Level() {
-		case slog.LevelError:
-			ev = l.Error()
-		case slog.LevelWarn:
-			ev = l.Warn()
-		default:
-			ev = l.Info()
-		}
-		ev.Str("method", e.Method).
-			Str("path", e.Path).
-			Int("status", e.Status).
-			Dur("latency", e.Latency).
-			Int("size", e.Size).
-			Str("ip", e.ClientIP).
-			Msg("request")
-	})
-}
 
 // SlogSink logs through a *slog.Logger, for services already standardised on
 // the standard library.

@@ -12,7 +12,6 @@ import (
 
 	"github.com/subhanjanops/gomicro"
 	"github.com/subhanjanops/gomicro/middleware"
-	"github.com/subhanjanops/loggy"
 )
 
 // engineWithSink serves one request through a Logger using sink.
@@ -42,62 +41,6 @@ func TestEntryLevel(t *testing.T) {
 		if got := (middleware.Entry{Status: tc.status}).Level(); got != tc.want {
 			t.Errorf("status %d -> %v, want %v", tc.status, got, tc.want)
 		}
-	}
-}
-
-// ---------------------------------------------------------------- loggy
-
-func TestLoggySink(t *testing.T) {
-	var out bytes.Buffer
-	l := loggy.New(loggy.WithOutput(&out), loggy.WithFormat(loggy.JSONFormat))
-
-	engineWithSink(t, middleware.LoggySink(l), http.StatusCreated, "/user/42?q=go")
-
-	var got map[string]any
-	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
-		t.Fatalf("not JSON: %v (%q)", err, out.String())
-	}
-	if got["path"] != "/user/:id" {
-		t.Errorf("path = %v, want the route pattern", got["path"])
-	}
-	if got["status"] != float64(http.StatusCreated) {
-		t.Errorf("status = %v", got["status"])
-	}
-	if got["method"] != "GET" {
-		t.Errorf("method = %v", got["method"])
-	}
-	if _, ok := got["latency"]; !ok {
-		t.Error("latency missing")
-	}
-}
-
-func TestLoggySinkSeverity(t *testing.T) {
-	tests := map[int]string{
-		http.StatusOK:                  "info",
-		http.StatusBadRequest:          "warn",
-		http.StatusInternalServerError: "error",
-	}
-	for status, want := range tests {
-		var out bytes.Buffer
-		l := loggy.New(loggy.WithOutput(&out), loggy.WithFormat(loggy.JSONFormat),
-			loggy.WithLevel(loggy.DebugLevel))
-
-		engineWithSink(t, middleware.LoggySink(l), status, "/user/42")
-
-		if !strings.Contains(strings.ToLower(out.String()), want) {
-			t.Errorf("status %d logged as %q, want level %q", status, out.String(), want)
-		}
-	}
-}
-
-func TestLoggySinkRespectsLevelFilter(t *testing.T) {
-	var out bytes.Buffer
-	l := loggy.New(loggy.WithOutput(&out), loggy.WithLevel(loggy.ErrorLevel))
-
-	engineWithSink(t, middleware.LoggySink(l), http.StatusOK, "/user/42")
-
-	if out.Len() != 0 {
-		t.Errorf("info entry written while the logger is at error level: %q", out.String())
 	}
 }
 
@@ -157,7 +100,6 @@ func TestSinkFuncSatisfiesSink(t *testing.T) {
 	var _ middleware.Sink = middleware.SinkFunc(func(middleware.Entry) {})
 	var _ middleware.Sink = middleware.TextSink(nil)
 	var _ middleware.Sink = middleware.SlogSink(slog.Default())
-	var _ middleware.Sink = middleware.LoggySink(loggy.Default())
 }
 
 // ---------------------------------------------------------------- benchmarks
@@ -173,14 +115,20 @@ func BenchmarkSinkText(b *testing.B) {
 	benchSink(b, middleware.TextSink(io.Discard))
 }
 
-func BenchmarkSinkLoggy(b *testing.B) {
-	benchSink(b, middleware.LoggySink(loggy.New(
-		loggy.WithOutput(io.Discard),
-		loggy.WithFormat(loggy.JSONFormat),
-		loggy.WithConcurrentWriter(),
-	)))
-}
-
 func BenchmarkSinkSlog(b *testing.B) {
 	benchSink(b, middleware.SlogSink(slog.New(slog.NewJSONHandler(io.Discard, nil))))
+}
+
+func TestDefaultSinkIsDependencyFree(t *testing.T) {
+	// A zero LoggerConfig must work without any logging library configured.
+	e := gomicro.New()
+	e.Use(middleware.LoggerWithConfig(middleware.LoggerConfig{}))
+	e.GET("/user/:id", func(c *gomicro.Context) { c.Text(http.StatusOK, "ok") })
+
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, httptest.NewRequest("GET", "/user/42", nil))
+
+	if rec.Body.String() != "ok" {
+		t.Errorf("body = %q", rec.Body)
+	}
 }
