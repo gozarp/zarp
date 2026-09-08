@@ -275,6 +275,7 @@ zarp/
 ├── middleware/                logger, recovery, cors, requestid
 ├── examples/                  five runnable apps
 ├── benchmarks/                end-to-end perf suite plus BASELINE.md
+├── CONTRIBUTING.md            how to work on it
 └── CLAUDE.md                  design constraints and conventions
 ```
 
@@ -305,15 +306,16 @@ code: 87`). Run the race detector under Linux instead:
 MSYS_NO_PATHCONV=1 docker run --rm -v "$(pwd -W)":/src -w /src golang:1.25 go test -race ./...
 ```
 
-### ✅ Pull request checklist
+---
 
-- [ ] `go build ./... && go vet ./... && gofmt -l .` (the last prints nothing)
-- [ ] `golangci-lint run ./...` is clean
-- [ ] `go test ./...` and `go test -race ./...` pass
-- [ ] `benchstat` comparison in the description for any change to the router, context or chain
-- [ ] allocs/op did not increase for any benchmark
-- [ ] no new map, reflection call, or `fmt` call on the hot path — or a written justification
-- [ ] any new `Context` field is cleared in `reset`
+## 🤝 Contributing
+
+Bug reports and pull requests are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) covers the design
+constraints a change is held to, the `benchstat` comparison required for anything touching the
+router, context or middleware chain, and the pre-PR checklist.
+
+Please open an issue first for anything that changes the public API, adds a package, or touches
+the router.
 
 ---
 
