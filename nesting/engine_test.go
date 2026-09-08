@@ -367,16 +367,13 @@ func benchMuxHandler() *http.ServeMux {
 	return m
 }
 
-// paramBody isolates framework cost from the handler's: writing a captured
-// param with c.String(code, "%s", v) boxes the argument for fmt, which is the
-// handler's allocation, not the engine's.
-var paramBody = []byte("ok")
-
+// benchEngineParamNoFmt writes the captured param with Text. The String variant
+// boxes its argument for fmt, which is the handler's allocation, not the
+// engine's — the two benchmarks together separate the costs.
 func benchEngineParamNoFmt() *Engine {
 	e := New()
 	e.addRoute("GET", "/user/:id", chain(func(c *Context) {
-		_ = c.Param("id")
-		c.Data(http.StatusOK, "text/plain", paramBody)
+		c.Text(http.StatusOK, c.Param("id"))
 	}))
 	return e
 }

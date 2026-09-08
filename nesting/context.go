@@ -535,8 +535,24 @@ func (c *Context) writeContentType(value string) {
 	}
 }
 
-// String writes a plain-text response. With no values it writes format as it
-// is, so the common case never reaches fmt.
+// Text writes a plain-text response verbatim.
+//
+// Unlike String, s is data rather than a format template: nothing in it is
+// interpreted, no fmt machinery runs, and go vet has no non-constant format
+// string to report. Prefer it whenever the text comes from a variable.
+func (c *Context) Text(code int, s string) {
+	c.Status(code)
+	c.writeContentType("text/plain; charset=utf-8")
+	c.writermem.WriteString(s)
+}
+
+// String writes a formatted plain-text response. With no values it writes
+// format as it is, so the common case never reaches fmt.
+//
+// format is a template, so passing a variable to it makes go vet report a
+// non-constant format string. That call is safe here — with no values the
+// string is written verbatim — but use Text for variable text and the warning
+// goes away along with the fmt allocation.
 func (c *Context) String(code int, format string, values ...any) {
 	c.Status(code)
 	c.writeContentType("text/plain; charset=utf-8")

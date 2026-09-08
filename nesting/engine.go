@@ -9,6 +9,10 @@ import (
 // implements http.Handler, which is the real integration point: users wanting
 // timeouts or graceful shutdown build their own http.Server around it.
 type Engine struct {
+	// RouterGroup is the root group: every route registered directly on the
+	// Engine goes through it, so the verb methods exist in one place only.
+	RouterGroup
+
 	Router
 
 	// pool holds idle Contexts. sync.Pool keeps a per-P free list, so under
@@ -41,6 +45,13 @@ type Engine struct {
 // interface with a typed field.
 var _ engineOptions = (*Engine)(nil)
 
+// Use adds middleware to the root group. It shadows the embedded
+// RouterGroup.Use only to return *Engine, so engine-level calls stay chainable.
+func (e *Engine) Use(middleware ...HandlerFunc) *Engine {
+	e.RouterGroup.Use(middleware...)
+	return e
+}
+
 func (e *Engine) trustForwardedForHeader() bool { return e.ForwardedByClientIP }
 func (e *Engine) maxMultipartMemory() int64     { return e.MaxMultipartMemory }
 
@@ -51,10 +62,12 @@ func (e *Engine) maxMultipartMemory() int64     { return e.MaxMultipartMemory }
 // them in your own main instead.
 func New() *Engine {
 	e := &Engine{
+		RouterGroup:           RouterGroup{basePath: "/", root: true},
 		RedirectTrailingSlash: true,
 		ForwardedByClientIP:   true,
 		MaxMultipartMemory:    defaultMultipartMemory,
 	}
+	e.RouterGroup.engine = e
 	e.pool.New = func() any { return e.allocateContext() }
 	return e
 }

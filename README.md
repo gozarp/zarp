@@ -4,13 +4,16 @@ A lightweight Go REST framework. Gin-style ergonomics, stdlib-level performance 
 
 No third-party dependencies. No reflection, no maps, and no allocations on the request path.
 
-> **Status: pre-alpha, under construction.** The radix router and the pooled request context
-> are built and tested. The `Engine`, middleware chain, and everything under
-> [Target API](#target-api) are not implemented yet — that code does not exist and will not
-> compile if you copy it. See [Roadmap](#roadmap) for exactly where things stand.
+> **Status: pre-alpha, under construction.** The radix router, the pooled request context, the
+> `Engine`, route groups and the middleware chain are built and tested — the code under
+> [Using it today](#using-it-today) runs. Still missing: `Run`, custom 404/405 handling,
+> trailing-slash redirects, and the `binding/`, `render/` and `middleware/` packages. See
+> [Roadmap](#roadmap) for exactly where things stand.
 >
-> Work in progress lives in the `nesting/` package while the core is being assembled; it
-> moves to the flat root package (per [CLAUDE.md](CLAUDE.md)) once `Engine` lands.
+> Work in progress lives in the `nesting/` package while the core is being assembled, so the
+> import path is `github.com/subhanjanops/gomicro/nesting` for now. It moves to the flat root
+> package (per [CLAUDE.md](CLAUDE.md)) in roadmap phase 4, before anything external depends
+> on it.
 
 ---
 
@@ -59,12 +62,21 @@ go test ./nesting/ -bench='Router|ServeMux' -benchmem -run XXX -count=5
 **Read these fairly.** `ServeMux.Handler()` does more than match a tree — it also cleans the
 path, handles host matching, and stores the matched wildcards in the request context, which is
 where most of its allocations come from. gomicro's `Lookup` resolves the route and fills a
-caller-supplied params buffer; the rest is `Engine`'s job and is not yet written. The honest
-claim is *route resolution is allocation-free and roughly an order of magnitude cheaper*, not
-that a full gomicro request is 8× faster than a `net/http` one. That end-to-end comparison
-comes with `Engine`.
+caller-supplied params buffer, leaving the rest to `Engine`. So read this table as *route
+resolution is allocation-free and roughly an order of magnitude cheaper*, not as a claim about
+whole requests. The end-to-end comparison below is the one to judge the framework by.
 
-The pooled context resets in **3.4 ns/op, 0 allocs**.
+End to end through `ServeHTTP`, against `net/http.ServeMux` serving equivalent handlers:
+
+| | gomicro | `net/http.ServeMux` |
+|---|---|---|
+| static route | **51.8 ns**, 0 allocs | 97.8 ns, 1 alloc |
+| param route | **55.0 ns**, 0 allocs | 175.4 ns, 2 allocs |
+| 404 | **47.3 ns**, 0 allocs | — |
+| parallel (`RunParallel`) | **28.9 ns**, 0 allocs | — |
+
+Zero allocations per request, end to end. Middleware costs **2.9 ns per hop** and allocates
+nothing: 45.7 ns with none, 74.6 ns with ten. The pooled context resets in **3.4 ns**.
 
 ---
 
@@ -139,24 +151,44 @@ fails at every level of the stack at once. Cost per middleware: one integer incr
 
 ---
 
-## Target API
+## Using it today
 
-**Not implemented yet.** This is the shape being built toward:
+This works now:
 
 ```go
+// import gomicro "github.com/subhanjanops/gomicro/nesting"  ← until phase 4
+
 r := gomicro.New()
 
 r.GET("/ping", func(c *gomicro.Context) {
     c.JSON(200, map[string]string{"message": "pong"})
 })
 
-api := r.Group("/api/v1", middleware.Logger(), middleware.Recovery())
+api := r.Group("/api/v1", authMiddleware)
 api.GET("/users/:id", func(c *gomicro.Context) {
     c.JSON(200, User{ID: c.Param("id")})
 })
 
-r.Run(":8080")
+// Engine implements http.Handler; Run(":8080") is not built yet.
+http.ListenAndServe(":8080", r)
 ```
+
+Middleware is an ordinary handler that calls `Next`:
+
+```go
+func authMiddleware(c *gomicro.Context) {
+    if c.GetHeader("Authorization") == "" {
+        c.AbortWithStatusJSON(401, map[string]string{"error": "unauthorized"})
+        return
+    }
+    c.Next()
+}
+```
+
+Two notes on the response helpers: use `c.Text(code, s)` for text that comes from a variable —
+`c.String` treats its argument as a format template, so `go vet` reports it and the `fmt` path
+costs an allocation. And a route pattern is available as `c.FullPath()`, which is what you want
+in logs and metrics rather than the raw URL.
 
 ---
 
@@ -165,9 +197,11 @@ r.Run(":8080")
 ```
 gomicro/
 ├── nesting/            work in progress — moves to the root package with Engine
-│   ├── router.go       radix tree: node, addRoute, Lookup   [done]
-│   ├── context.go      Context, pooling fields, ResponseWriter  [partial]
-│   └── handler.go      HandlerFunc, chain execution         [not started]
+│   ├── router.go       radix tree: node, addRoute, Lookup       [done]
+│   ├── context.go      Context, pooling, params, response helpers [done]
+│   ├── engine.go       Engine, sync.Pool, ServeHTTP              [partial]
+│   ├── group.go        RouterGroup, verbs, prefixes, Use         [done]
+│   └── handler.go      HandlerFunc, Next, Abort                  [done]
 ├── context.go          root-package scaffolding
 ├── engine.go           root-package scaffolding
 ├── benchmarks/         standalone perf suite (empty for now)
@@ -217,9 +251,9 @@ benchstat old.txt new.txt                    # required for perf-sensitive chang
 | | Milestone | State |
 |---|---|---|
 | M1 | Radix router — `addRoute`, `Lookup`, wildcards, TSR, priority ordering | **done** — 18 tests, 0 allocs, benchmarked vs `ServeMux` |
-| M2 | `Context` — pooling fields, `reset`, response writer | **in progress** — writer and `reset` done; params/query/keys accessors, `context.Context` methods, `JSON`, `Copy` remain |
-| M3 | `Engine` — `ServeHTTP`, `sync.Pool` wiring, 404/405/redirects | not started |
-| M4 | `RouterGroup` + chain execution — nesting, `Next`, `Abort` | not started |
+| M2 | `Context` — pooling, `reset`, params/query/form/keys, response helpers, `Copy` | **done** — accessors are allocation-free |
+| M3 | `Engine` — `ServeHTTP`, `sync.Pool` wiring, 404/405/redirects | **in progress** — serving and pooling done; `NoRoute`, 405 + `Allow`, trailing-slash redirects and `Run` remain |
+| M4 | `RouterGroup` + chain execution — nesting, `Next`, `Abort` | **done** — bar the `IRouter`/`IRoutes` interfaces |
 | M5 | `binding/` + `render/` | not started |
 | M6 | `middleware/` — logger, recovery, cors, requestid | not started |
 | M7 | `examples/`, published baseline numbers | not started |

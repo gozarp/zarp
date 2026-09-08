@@ -1,0 +1,6 @@
+# Go tooling treats CRLF files as unformatted, which makes `gofmt -l .` noisy
+# and trains people to ignore it. Normalise text files to LF in the work tree.
+*.go   text eol=lf
+*.md   text eol=lf
+*.mod  text eol=lf
+*.sum  text eol=lf

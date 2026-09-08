@@ -365,6 +365,36 @@ func TestString(t *testing.T) {
 	}
 }
 
+func TestText(t *testing.T) {
+	c, rec := ctxFor("GET", "/", "")
+	c.Text(http.StatusTeapot, "hello")
+	if rec.Code != http.StatusTeapot || rec.Body.String() != "hello" {
+		t.Errorf("code=%d body=%q", rec.Code, rec.Body.String())
+	}
+	if ct := rec.Header().Get("Content-Type"); ct != "text/plain; charset=utf-8" {
+		t.Errorf("content type = %q", ct)
+	}
+}
+
+func TestTextIsNotAFormatString(t *testing.T) {
+	c, rec := ctxFor("GET", "/", "")
+	// Data with verbs in it must survive untouched — that is the whole point.
+	raw := "100%% sure: %s %d %v"
+	c.Text(http.StatusOK, raw)
+	if got := rec.Body.String(); got != raw {
+		t.Errorf("body = %q, want %q verbatim", got, raw)
+	}
+}
+
+func TestTextKeepsHandlerContentType(t *testing.T) {
+	c, rec := ctxFor("GET", "/", "")
+	c.Header("Content-Type", "text/csv")
+	c.Text(http.StatusOK, "a,b")
+	if ct := rec.Header().Get("Content-Type"); ct != "text/csv" {
+		t.Errorf("content type = %q, want the handler's choice preserved", ct)
+	}
+}
+
 func TestStringWithFormat(t *testing.T) {
 	c, rec := ctxFor("GET", "/", "")
 	c.String(http.StatusOK, "hello %s, you are %d", "octocat", 7)
@@ -557,6 +587,34 @@ func BenchmarkContextJSONSmall(b *testing.B) {
 		rec.Body.Reset()
 		c.reset(rec, nil)
 		c.JSON(http.StatusOK, obj)
+	}
+}
+
+func BenchmarkContextText(b *testing.B) {
+	rec := httptest.NewRecorder()
+	c := &Context{}
+	value := "octocat"
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		rec.Body.Reset()
+		c.reset(rec, nil)
+		c.Text(http.StatusOK, value)
+	}
+}
+
+// BenchmarkContextStringFormatted is the same write done through String, which
+// is what a handler must otherwise reach for when the text is a variable.
+func BenchmarkContextStringFormatted(b *testing.B) {
+	rec := httptest.NewRecorder()
+	c := &Context{}
+	value := "octocat"
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		rec.Body.Reset()
+		c.reset(rec, nil)
+		c.String(http.StatusOK, "%s", value)
 	}
 }
 
