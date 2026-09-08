@@ -1,4 +1,4 @@
-package nesting
+package gomicro
 
 import (
 	"net/http"
@@ -252,26 +252,83 @@ func TestGroupTrailingSlashRoutesAreDistinct(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------- benchmarks
+// ---------------------------------------------------------------- interfaces
 
-func BenchmarkGroupedRoute(b *testing.B) {
-	e := New()
-	e.Use(func(c *Context) { c.Next() })
-	v1 := e.Group("/api/v1", func(c *Context) { c.Next() })
-	v1.GET("/users/:id", func(c *Context) { c.Text(http.StatusOK, c.Param("id")) })
-	benchServe(b, e, "GET", "/api/v1/users/42")
+// setupRoutes is the reason IRouter exists: one function that registers against
+// either the engine or a group.
+func setupRoutes(r IRouter, tag string) {
+	r.GET("/ping", func(c *Context) { c.Text(http.StatusOK, tag+":"+c.FullPath()) })
+	sub := r.Group("/sub")
+	sub.GET("/deep", func(c *Context) { c.Text(http.StatusOK, tag+":deep") })
 }
 
-func benchChainOf(n int) *Engine {
+func TestIRouterAcceptsEngineAndGroup(t *testing.T) {
 	e := New()
-	for range n {
-		e.Use(func(c *Context) { c.Next() })
+	setupRoutes(e, "engine")
+	setupRoutes(e.Group("/api"), "group")
+
+	cases := []struct{ target, want string }{
+		{"/ping", "engine:/ping"},
+		{"/sub/deep", "engine:deep"},
+		{"/api/ping", "group:/api/ping"},
+		{"/api/sub/deep", "group:deep"},
 	}
-	e.GET("/x", func(c *Context) { c.Text(http.StatusOK, "ok") })
-	return e
+	for _, tc := range cases {
+		if got := serve(e, "GET", tc.target).Body.String(); got != tc.want {
+			t.Errorf("%s = %q, want %q", tc.target, got, tc.want)
+		}
+	}
 }
 
-func BenchmarkChain0(b *testing.B)  { benchServe(b, benchChainOf(0), "GET", "/x") }
-func BenchmarkChain1(b *testing.B)  { benchServe(b, benchChainOf(1), "GET", "/x") }
-func BenchmarkChain3(b *testing.B)  { benchServe(b, benchChainOf(3), "GET", "/x") }
-func BenchmarkChain10(b *testing.B) { benchServe(b, benchChainOf(10), "GET", "/x") }
+func TestIRoutesAcceptsBoth(t *testing.T) {
+	register := func(r IRoutes, path, body string) {
+		r.GET(path, func(c *Context) { c.Text(http.StatusOK, body) })
+	}
+	e := New()
+	register(e, "/a", "engine")
+	register(e.Group("/g"), "/b", "group")
+
+	if got := serve(e, "GET", "/a").Body.String(); got != "engine" {
+		t.Errorf("/a = %q", got)
+	}
+	if got := serve(e, "GET", "/g/b").Body.String(); got != "group" {
+		t.Errorf("/g/b = %q", got)
+	}
+}
+
+func TestBasePathThroughInterface(t *testing.T) {
+	e := New()
+	var r IRouter = e
+	if got := r.BasePath(); got != "/" {
+		t.Errorf("engine base path = %q, want /", got)
+	}
+	if got := r.Group("/api/v1").BasePath(); got != "/api/v1" {
+		t.Errorf("group base path = %q", got)
+	}
+}
+
+// Use on the root group must rebuild the fallback chains however it is reached,
+// including through a chained call that returns *RouterGroup.
+func TestChainedUseRebuildsFallbacks(t *testing.T) {
+	var ran []string
+	e := New()
+	e.NoRoute(func(c *Context) { ran = append(ran, "noroute") })
+	e.Use(mark(&ran, "a")).Use(mark(&ran, "b"))
+
+	serve(e, "GET", "/missing")
+	if got := strings.Join(ran, " "); got != "a b noroute" {
+		t.Errorf("ran = %q, want both middlewares wrapping NoRoute", got)
+	}
+}
+
+func TestGroupUseDoesNotTouchFallbacks(t *testing.T) {
+	var ran []string
+	e := New()
+	e.NoRoute(func(c *Context) { ran = append(ran, "noroute") })
+	e.Group("/api").Use(mark(&ran, "group-mw"))
+
+	serve(e, "GET", "/missing")
+	if got := strings.Join(ran, " "); got != "noroute" {
+		t.Errorf("ran = %q — a non-root group must not wrap NoRoute", got)
+	}
+}

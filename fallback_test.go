@@ -1,4 +1,4 @@
-package nesting
+package gomicro
 
 import (
 	"net/http"
@@ -256,20 +256,4 @@ func TestRunServesRequests(t *testing.T) {
 	if string(buf[:n]) != "pong" {
 		t.Errorf("body = %q", buf[:n])
 	}
-}
-
-// ---------------------------------------------------------------- benchmarks
-
-func BenchmarkEngine405(b *testing.B) {
-	e := New()
-	e.HandleMethodNotAllowed = true
-	e.GET("/x", func(c *Context) {})
-	e.PUT("/x", func(c *Context) {})
-	benchServe(b, e, "POST", "/x")
-}
-
-func BenchmarkEngineRedirect(b *testing.B) {
-	e := New()
-	e.GET("/dir/", func(c *Context) {})
-	benchServe(b, e, "GET", "/dir")
 }

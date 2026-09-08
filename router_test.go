@@ -1,4 +1,4 @@
-package nesting
+package gomicro
 
 import (
 	"fmt"
@@ -59,9 +59,9 @@ func checkTree(t *testing.T, n *node) {
 	}
 }
 
-func newRouter(t *testing.T, routes ...string) *Router {
+func newRouter(t *testing.T, routes ...string) *router {
 	t.Helper()
-	r := &Router{}
+	r := &router{}
 	for _, p := range routes {
 		r.addRoute("GET", p, hn(p))
 	}
@@ -101,7 +101,7 @@ func TestAddRouteLookup(t *testing.T) {
 	}
 	for _, tc := range tests {
 		ps := make(Params, 0, r.maxParams)
-		hs, _, tsr := r.Lookup("GET", tc.path, &ps)
+		hs, _, tsr := r.lookup("GET", tc.path, &ps)
 		if (hs != nil) != tc.found || tsr != tc.tsr {
 			t.Errorf("%s: found=%v tsr=%v, want %v/%v", tc.path, hs != nil, tsr, tc.found, tc.tsr)
 		}
@@ -125,7 +125,7 @@ func TestAddRouteSplitOrders(t *testing.T) {
 	} {
 		r := newRouter(t, order...)
 		for _, p := range order {
-			if hs, _, _ := r.Lookup("GET", p, nil); hs == nil {
+			if hs, _, _ := r.lookup("GET", p, nil); hs == nil {
 				t.Errorf("order %v: %s not found", order, p)
 			}
 		}
@@ -133,23 +133,23 @@ func TestAddRouteSplitOrders(t *testing.T) {
 }
 
 func TestAddRouteMethods(t *testing.T) {
-	r := &Router{}
+	r := &router{}
 	r.addRoute("GET", "/x", hn("get"))
 	r.addRoute("POST", "/x", hn("post"))
 	r.addRoute("GET", "/y", hn("get2"))
 	if len(r.trees) != 2 {
 		t.Errorf("trees = %d, want 2", len(r.trees))
 	}
-	if hs, _, _ := r.Lookup("GET", "/y", nil); hs == nil {
+	if hs, _, _ := r.lookup("GET", "/y", nil); hs == nil {
 		t.Error("GET /y not found")
 	}
-	if hs, _, _ := r.Lookup("DELETE", "/x", nil); hs != nil {
+	if hs, _, _ := r.lookup("DELETE", "/x", nil); hs != nil {
 		t.Error("DELETE /x should not match")
 	}
 }
 
 func TestAddRouteMaxParams(t *testing.T) {
-	r := &Router{}
+	r := &router{}
 	r.addRoute("GET", "/a/:x", hn("a"))
 	if r.maxParams != 1 {
 		t.Errorf("maxParams = %d, want 1", r.maxParams)
@@ -169,40 +169,40 @@ func TestAddRouteMaxParams(t *testing.T) {
 }
 
 func TestAddRoutePanics(t *testing.T) {
-	mustPanic(t, "must not be empty", func() { (&Router{}).addRoute("", "/x", hn("x")) })
-	mustPanic(t, "must begin with", func() { (&Router{}).addRoute("GET", "x", hn("x")) })
-	mustPanic(t, "at least one handler", func() { (&Router{}).addRoute("GET", "/x", nil) })
+	mustPanic(t, "must not be empty", func() { (&router{}).addRoute("", "/x", hn("x")) })
+	mustPanic(t, "must begin with", func() { (&router{}).addRoute("GET", "x", hn("x")) })
+	mustPanic(t, "at least one handler", func() { (&router{}).addRoute("GET", "/x", nil) })
 	mustPanic(t, "already registered", func() {
-		r := &Router{}
+		r := &router{}
 		r.addRoute("GET", "/x", hn("x"))
 		r.addRoute("GET", "/x", hn("x2"))
 	})
 	mustPanic(t, "conflicts", func() { // param then static
-		r := &Router{}
+		r := &router{}
 		r.addRoute("GET", "/user/:id", hn("id"))
 		r.addRoute("GET", "/user/new", hn("new"))
 	})
 	mustPanic(t, "conflicts", func() { // static then param
-		r := &Router{}
+		r := &router{}
 		r.addRoute("GET", "/user/new", hn("new"))
 		r.addRoute("GET", "/user/:id", hn("id"))
 	})
 	mustPanic(t, "conflicts", func() { // different wildcard names
-		r := &Router{}
+		r := &router{}
 		r.addRoute("GET", "/user/:id", hn("id"))
 		r.addRoute("GET", "/user/:name", hn("name"))
 	})
 	mustPanic(t, "conflicts", func() { // route after a catch-all
-		r := &Router{}
+		r := &router{}
 		r.addRoute("GET", "/src/*fp", hn("fp"))
 		r.addRoute("GET", "/src/x", hn("x"))
 	})
-	mustPanic(t, "catch-all", func() { (&Router{}).addRoute("GET", "/src/*fp/x", hn("x")) })
-	mustPanic(t, "wildcard", func() { (&Router{}).addRoute("GET", "/user/:", hn("x")) })
+	mustPanic(t, "catch-all", func() { (&router{}).addRoute("GET", "/src/*fp/x", hn("x")) })
+	mustPanic(t, "wildcard", func() { (&router{}).addRoute("GET", "/user/:", hn("x")) })
 }
 
 func TestAddRoutePriorityOrdering(t *testing.T) {
-	r := &Router{}
+	r := &router{}
 	r.addRoute("GET", "/zebra", hn("z"))
 	for i := 0; i < 10; i++ {
 		r.addRoute("GET", fmt.Sprintf("/api/v%d", i), hn("api"))
@@ -213,7 +213,7 @@ func TestAddRoutePriorityOrdering(t *testing.T) {
 		t.Errorf("indices = %q, want the hot branch first", root.indices)
 	}
 	for _, p := range []string{"/zebra", "/api/v0", "/api/v9"} {
-		if hs, _, _ := r.Lookup("GET", p, nil); hs == nil {
+		if hs, _, _ := r.lookup("GET", p, nil); hs == nil {
 			t.Errorf("%s not found after reordering", p)
 		}
 	}
@@ -242,7 +242,7 @@ func TestAddRouteBulk(t *testing.T) {
 	}
 	for path, want := range probes {
 		ps := make(Params, 0, r.maxParams+1)
-		hs, _, _ := r.Lookup("GET", path, &ps)
+		hs, _, _ := r.lookup("GET", path, &ps)
 		if hs == nil {
 			t.Errorf("%s: not found", path)
 		}
@@ -253,7 +253,7 @@ func TestAddRouteBulk(t *testing.T) {
 }
 
 func BenchmarkLookupBulk(b *testing.B) {
-	r := &Router{}
+	r := &router{}
 	for _, p := range []string{
 		"/", "/repos/:owner/:repo", "/repos/:owner/:repo/issues/:number",
 		"/repos/:owner/:repo/contents/*path", "/users/:user", "/search/issues",
@@ -264,6 +264,6 @@ func BenchmarkLookupBulk(b *testing.B) {
 	b.ReportAllocs()
 	for b.Loop() {
 		ps = ps[:0]
-		r.Lookup("GET", "/repos/golang/go/issues/42", &ps)
+		r.lookup("GET", "/repos/golang/go/issues/42", &ps)
 	}
 }

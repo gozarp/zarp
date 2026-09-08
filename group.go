@@ -1,4 +1,4 @@
-package nesting
+package gomicro
 
 import (
 	"net/http"
@@ -17,6 +17,40 @@ type RouterGroup struct {
 	engine   *Engine
 	root     bool
 }
+
+// IRoutes is anything routes and middleware can be registered on. *Engine and
+// *RouterGroup both satisfy it, so a setup function can take either:
+//
+//	func registerUserRoutes(r gomicro.IRoutes) { r.GET("/users/:id", show) }
+//
+// The methods keep their concrete *RouterGroup return type rather than
+// returning the interface, so chaining does not erase the type.
+type IRoutes interface {
+	Use(...HandlerFunc) *RouterGroup
+
+	Handle(string, string, ...HandlerFunc) *RouterGroup
+	Any(string, ...HandlerFunc) *RouterGroup
+	GET(string, ...HandlerFunc) *RouterGroup
+	POST(string, ...HandlerFunc) *RouterGroup
+	PUT(string, ...HandlerFunc) *RouterGroup
+	PATCH(string, ...HandlerFunc) *RouterGroup
+	DELETE(string, ...HandlerFunc) *RouterGroup
+	HEAD(string, ...HandlerFunc) *RouterGroup
+	OPTIONS(string, ...HandlerFunc) *RouterGroup
+}
+
+// IRouter is an IRoutes that can also nest.
+type IRouter interface {
+	IRoutes
+
+	Group(string, ...HandlerFunc) *RouterGroup
+	BasePath() string
+}
+
+var (
+	_ IRouter = (*Engine)(nil)
+	_ IRouter = (*RouterGroup)(nil)
+)
 
 // anyMethods is what Any registers across.
 var anyMethods = [...]string{
@@ -42,8 +76,15 @@ func (g *RouterGroup) Group(relativePath string, handlers ...HandlerFunc) *Route
 //
 // It affects only routes registered afterwards: a route's chain is resolved and
 // copied at registration, so calling Use later cannot reach back into it.
+//
+// On the engine's root group it also refreshes the NoRoute and NoMethod chains,
+// which run behind the same middleware. Doing it here rather than in an
+// Engine.Use wrapper means a chained e.Use(a).Use(b) rebuilds on both calls.
 func (g *RouterGroup) Use(middleware ...HandlerFunc) *RouterGroup {
 	g.Handlers = append(g.Handlers, middleware...)
+	if g.root && g.engine != nil {
+		g.engine.rebuildFallbacks()
+	}
 	return g
 }
 

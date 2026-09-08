@@ -9,11 +9,7 @@ No third-party dependencies. No reflection, no maps, and no allocations on the r
 > [Using it today](#using-it-today) runs, including `NoRoute`, 405 handling, trailing-slash
 > redirects and `Run`. Still missing: the `binding/`, `render/` and `middleware/` packages.
 > See [Roadmap](#roadmap) for exactly where things stand.
->
-> Work in progress lives in the `nesting/` package while the core is being assembled, so the
-> import path is `github.com/subhanjanops/gomicro/nesting` for now. It moves to the flat root
-> package (per [CLAUDE.md](CLAUDE.md)) in roadmap phase 4, before anything external depends
-> on it.
+
 
 ---
 
@@ -56,12 +52,12 @@ set (static routes, single and multi params, one catch-all):
 `go1.25.0 windows/amd64`, AMD Ryzen 7 7435HS, `-count=5`, averaged. Reproduce with:
 
 ```sh
-go test ./nesting/ -bench='Router|ServeMux' -benchmem -run XXX -count=5
+go test -bench='Router|ServeMux' -benchmem -run XXX -count=5 .
 ```
 
 **Read these fairly.** `ServeMux.Handler()` does more than match a tree — it also cleans the
 path, handles host matching, and stores the matched wildcards in the request context, which is
-where most of its allocations come from. gomicro's `Lookup` resolves the route and fills a
+where most of its allocations come from. gomicro's tree walk resolves the route and fills a
 caller-supplied params buffer, leaving the rest to `Engine`. So read this table as *route
 resolution is allocation-free and roughly an order of magnitude cheaper*, not as a claim about
 whole requests. The end-to-end comparison below is the one to judge the framework by.
@@ -70,13 +66,18 @@ End to end through `ServeHTTP`, against `net/http.ServeMux` serving equivalent h
 
 | | gomicro | `net/http.ServeMux` |
 |---|---|---|
-| static route | **51.8 ns**, 0 allocs | 97.8 ns, 1 alloc |
-| param route | **55.0 ns**, 0 allocs | 175.4 ns, 2 allocs |
-| 404 | **47.3 ns**, 0 allocs | — |
-| parallel (`RunParallel`) | **28.9 ns**, 0 allocs | — |
+| static route | **50.7 ns**, 0 allocs | 88.8 ns, 1 alloc |
+| param route | **57.6 ns**, 0 allocs | 174.3 ns, 2 allocs |
+| 404 | **47.5 ns**, 0 allocs | — |
+| trailing-slash redirect | **28.6 ns**, 0 allocs | — |
+| parallel (`RunParallel`, 16 cores) | **8.4 ns**, 0 allocs | — |
 
-Zero allocations per request, end to end. Middleware costs **2.9 ns per hop** and allocates
-nothing: 45.7 ns with none, 74.6 ns with ten. The pooled context resets in **3.4 ns**.
+Zero allocations per request, end to end. Middleware costs **2.8 ns per hop** and allocates
+nothing: 46.5 ns with none, 74.4 ns with ten. The pooled context resets in **3.4 ns**.
+
+```sh
+go test -bench=. -benchmem ./benchmarks/...
+```
 
 ---
 
@@ -156,7 +157,7 @@ fails at every level of the stack at once. Cost per middleware: one integer incr
 This works now:
 
 ```go
-// import gomicro "github.com/subhanjanops/gomicro/nesting"  ← until phase 4
+import "github.com/subhanjanops/gomicro"
 
 r := gomicro.New()
 
@@ -195,15 +196,13 @@ in logs and metrics rather than the raw URL.
 
 ```
 gomicro/
-├── nesting/            work in progress — moves to the root package with Engine
-│   ├── router.go       radix tree: node, addRoute, Lookup       [done]
-│   ├── context.go      Context, pooling, params, response helpers [done]
-│   ├── engine.go       Engine, sync.Pool, ServeHTTP              [partial]
-│   ├── group.go        RouterGroup, verbs, prefixes, Use         [done]
-│   └── handler.go      HandlerFunc, Next, Abort                  [done]
-├── context.go          root-package scaffolding
-├── engine.go           root-package scaffolding
-├── benchmarks/         standalone perf suite (empty for now)
+├── doc.go              package documentation
+├── router.go           radix tree: node, addRoute, Lookup
+├── context.go          Context, pooling, params, response helpers
+├── engine.go           Engine, sync.Pool, ServeHTTP, 404/405/redirects
+├── group.go            RouterGroup, verbs, prefixes, Use, IRouter
+├── handler.go          HandlerFunc, Next, Abort
+├── benchmarks/         end-to-end perf suite, run with -bench
 ├── binding/            request parsing/validation, optional import (empty)
 ├── render/             response rendering, optional import (empty)
 ├── middleware/         logger, recovery, cors, requestid (empty)
@@ -225,12 +224,13 @@ go build ./...
 go vet ./...
 gofmt -l .                                   # should print nothing
 
-go test ./...                                # unit tests
-go test -run TestAddRouteLookup ./nesting/   # a single test
+go test ./...                                # unit tests; benchmarks/ has none
+go test -run TestAddRouteLookup .            # a single test
 go test -race ./...                          # see the note below on Windows
 
-go test ./nesting/ -bench=. -benchmem -run XXX
-go test ./nesting/ -bench=BenchmarkRouterParam -benchmem -count=10 > new.txt
+go test -bench=. -benchmem ./benchmarks/...  # end-to-end suite
+go test -bench=. -benchmem -run XXX .        # router and context micro-benchmarks
+go test -bench=BenchmarkRouterParam -benchmem -count=10 -run XXX . > new.txt
 benchstat old.txt new.txt                    # required for perf-sensitive changes
 ```
 
@@ -259,7 +259,8 @@ MSYS_NO_PATHCONV=1 docker run --rm -v "$(pwd -W)":/src -w /src golang:1.25 go te
 | M1 | Radix router — `addRoute`, `Lookup`, wildcards, TSR, priority ordering | **done** — 18 tests, 0 allocs, benchmarked vs `ServeMux` |
 | M2 | `Context` — pooling, `reset`, params/query/form/keys, response helpers, `Copy` | **done** — accessors are allocation-free |
 | M3 | `Engine` — `ServeHTTP`, `sync.Pool` wiring, 404/405/redirects | **done** — `NoRoute`, 405 + `Allow`, trailing-slash redirects, `Run`, race-clean pooling |
-| M4 | `RouterGroup` + chain execution — nesting, `Next`, `Abort` | **done** — bar the `IRouter`/`IRoutes` interfaces |
+| M4 | `RouterGroup` + chain execution — nesting, `Next`, `Abort`, `IRouter`/`IRoutes` | **done** |
+| — | Flat root package, `benchmarks/` split out, godoc pass | **done** |
 | M5 | `binding/` + `render/` | not started |
 | M6 | `middleware/` — logger, recovery, cors, requestid | not started |
 | M7 | `examples/`, published baseline numbers | not started |

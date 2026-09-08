@@ -1,4 +1,4 @@
-package nesting
+package gomicro
 
 import (
 	"fmt"
@@ -314,89 +314,4 @@ func TestParamsBufferGrowsForRoutesRegisteredLate(t *testing.T) {
 	if capacity < 3 {
 		t.Errorf("params capacity = %d, want at least 3 without growing mid-request", capacity)
 	}
-}
-
-// ---------------------------------------------------------------- benchmarks
-
-// nopWriter measures the framework rather than httptest's buffer growth. It
-// implements io.StringWriter because net/http's own response does: without it
-// io.WriteString falls back to a []byte conversion and the benchmark measures
-// an allocation production never pays.
-type nopWriter struct{ header http.Header }
-
-func (w *nopWriter) Header() http.Header {
-	if w.header == nil {
-		w.header = make(http.Header)
-	}
-	return w.header
-}
-func (w *nopWriter) Write(b []byte) (int, error)       { return len(b), nil }
-func (w *nopWriter) WriteString(s string) (int, error) { return len(s), nil }
-func (w *nopWriter) WriteHeader(int)                   {}
-
-func benchServe(b *testing.B, h http.Handler, method, target string) {
-	req := httptest.NewRequest(method, target, nil)
-	w := &nopWriter{}
-	b.ReportAllocs()
-	b.ResetTimer()
-	for b.Loop() {
-		h.ServeHTTP(w, req)
-	}
-}
-
-func benchEngine() *Engine {
-	e := New()
-	e.addRoute("GET", "/ping", chain(func(c *Context) { c.String(http.StatusOK, "pong") }))
-	e.addRoute("GET", "/user/:id", chain(func(c *Context) { c.String(http.StatusOK, "%s", c.Param("id")) }))
-	e.addRoute("GET", "/j", chain(func(c *Context) {
-		c.JSON(http.StatusOK, map[string]string{"message": "pong"})
-	}))
-	return e
-}
-
-func benchMuxHandler() *http.ServeMux {
-	m := http.NewServeMux()
-	m.HandleFunc("GET /ping", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("pong"))
-	})
-	m.HandleFunc("GET /user/{id}", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(r.PathValue("id")))
-	})
-	return m
-}
-
-// benchEngineParamNoFmt writes the captured param with Text. The String variant
-// boxes its argument for fmt, which is the handler's allocation, not the
-// engine's — the two benchmarks together separate the costs.
-func benchEngineParamNoFmt() *Engine {
-	e := New()
-	e.addRoute("GET", "/user/:id", chain(func(c *Context) {
-		c.Text(http.StatusOK, c.Param("id"))
-	}))
-	return e
-}
-
-func BenchmarkEngineParamNoFmt(b *testing.B) {
-	benchServe(b, benchEngineParamNoFmt(), "GET", "/user/42")
-}
-
-func BenchmarkEngineStatic(b *testing.B)  { benchServe(b, benchEngine(), "GET", "/ping") }
-func BenchmarkNetHTTPStatic(b *testing.B) { benchServe(b, benchMuxHandler(), "GET", "/ping") }
-func BenchmarkEngineParam(b *testing.B)   { benchServe(b, benchEngine(), "GET", "/user/42") }
-func BenchmarkNetHTTPParam(b *testing.B)  { benchServe(b, benchMuxHandler(), "GET", "/user/42") }
-func BenchmarkEngineJSON(b *testing.B)    { benchServe(b, benchEngine(), "GET", "/j") }
-func BenchmarkEngine404(b *testing.B)     { benchServe(b, benchEngine(), "GET", "/nope") }
-func BenchmarkEngineParallel(b *testing.B) {
-	e := benchEngine()
-	req := httptest.NewRequest("GET", "/user/42", nil)
-	b.ReportAllocs()
-	b.ResetTimer()
-	b.RunParallel(func(pb *testing.PB) {
-		w := &nopWriter{}
-		for pb.Next() {
-			e.ServeHTTP(w, req)
-		}
-	})
 }

@@ -1,4 +1,4 @@
-package nesting
+package gomicro
 
 import (
 	"net/http"
@@ -6,7 +6,7 @@ import (
 )
 
 // The route set is the shape of a real API: a static core plus params and one
-// catch-all. Each benchmark pairs a gomicro Lookup with the equivalent
+// catch-all. Each benchmark pairs a gomicro lookup with the equivalent
 // net/http.ServeMux match, so the overhead claim is measured, not asserted.
 var benchRoutes = []struct{ gomicro, mux string }{
 	{"/", "/{$}"},
@@ -23,8 +23,8 @@ var benchRoutes = []struct{ gomicro, mux string }{
 	{"/repos/:owner/:repo/contents/*path", "/repos/{owner}/{repo}/contents/{path...}"},
 }
 
-func benchRouter() *Router {
-	r := &Router{}
+func benchRouter() *router {
+	r := &router{}
 	for _, rt := range benchRoutes {
 		r.addRoute(http.MethodGet, rt.gomicro, []HandlerFunc{func(*Context) {}})
 	}
@@ -52,7 +52,7 @@ func benchLookup(b *testing.B, path string) {
 	b.ResetTimer()
 	for b.Loop() {
 		ps = ps[:0]
-		sinkHandlers, _, _ = r.Lookup(http.MethodGet, path, &ps)
+		sinkHandlers, _, _ = r.lookup(http.MethodGet, path, &ps)
 	}
 }
 

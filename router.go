@@ -1,4 +1,4 @@
-package nesting
+package gomicro
 
 type Param struct {
 	Key, Value string
@@ -205,7 +205,7 @@ type methodTree struct {
 	root   *node
 }
 
-type Router struct {
+type router struct {
 	trees     []methodTree
 	maxParams uint16
 }
@@ -229,7 +229,7 @@ func countParams(path string) uint16 {
 // on first use. It panics on a malformed route, a duplicate registration or a
 // wildcard conflict: registration happens at boot, so a panic is the signal
 // that fits.
-func (r *Router) addRoute(method, path string, handlers []HandlerFunc) {
+func (r *router) addRoute(method, path string, handlers []HandlerFunc) {
 	switch {
 	case method == "":
 		panic("gomicro: method must not be empty")
@@ -359,7 +359,7 @@ walk:
 	}
 }
 
-// Lookup matches path in the tree registered for method.
+// lookup matches path in the tree registered for method.
 //
 // params is supplied by the caller and appended into, so a param route costs no
 // allocation; pass a zero-length slice whose backing array holds at least
@@ -369,9 +369,9 @@ walk:
 // metrics.
 //
 // tsr ("trailing slash redirect") reports that path would have matched with a
-// trailing slash added or removed. It is a hint only: Lookup never writes a
+// trailing slash added or removed. It is a hint only: lookup never writes a
 // response, and whether to redirect is Engine's decision.
-func (r *Router) Lookup(method, path string, params *Params) (handlers []HandlerFunc, fullPath string, tsr bool) {
+func (r *router) lookup(method, path string, params *Params) (handlers []HandlerFunc, fullPath string, tsr bool) {
 	for i := range r.trees {
 		if r.trees[i].method == method {
 			return r.trees[i].root.getValue(path, params)
