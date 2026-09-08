@@ -1,0 +1,103 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+
+      - name: Build (packages and examples)
+        run: go build ./...
+
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "These files need gofmt:"; echo "$unformatted"; exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: Tidy check
+        run: |
+          go mod tidy
+          git diff --exit-code go.mod go.sum 2>/dev/null || {
+            echo "go.mod/go.sum are not tidy"; exit 1; }
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+
+      - name: Test
+        run: go test ./...
+
+      # The race detector cannot start on some Windows builds, so this is the
+      # authoritative run for it.
+      - name: Test (race)
+        run: go test -race -covermode=atomic -coverprofile=coverage.out ./...
+
+      - name: Coverage summary
+        run: go tool cover -func=coverage.out | tail -1
+
+  dependencies:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+
+      # The design rests on two claims about imports. Assert them, rather than
+      # trusting review to notice the day one breaks.
+      - name: Core imports nothing third-party
+        run: |
+          # A package is stdlib when its first path segment has no dot. The
+          # standard library also vendors a few golang.org/x packages under
+          # vendor/, which are stdlib internals, not dependencies.
+          deps=$(go list -deps .             | grep -v '^github.com/subhanjanops/gomicro'             | grep -v '^vendor/'             | grep '^[^/]*\.' || true)
+          if [ -n "$deps" ]; then
+            echo "core has non-stdlib dependencies:"; echo "$deps"; exit 1
+          fi
+
+      - name: Core imports none of the optional packages
+        run: |
+          bad=$(go list -deps . | grep -E 'gomicro/(binding|render|middleware)' || true)
+          if [ -n "$bad" ]; then
+            echo "core imports an optional package:"; echo "$bad"; exit 1
+          fi
+
+      - name: Whole module has no third-party requirements
+        run: |
+          mods=$(go list -m all | tail -n +2)
+          if [ -n "$mods" ]; then
+            echo "module has third-party requirements:"; echo "$mods"; exit 1
+          fi
+
+  benchmarks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+
+      # Not a performance gate — CI runners are too noisy for ns/op — but this
+      # catches a benchmark that stops compiling or starts panicking.
+      - name: Benchmarks (smoke)
+        run: go test -bench=. -benchtime=10x -run XXX ./...
