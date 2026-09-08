@@ -256,14 +256,18 @@ MSYS_NO_PATHCONV=1 docker run --rm -v "$(pwd -W)":/src -w /src golang:1.25 go te
 
 | | Milestone | State |
 |---|---|---|
-| M1 | Radix router — `addRoute`, `Lookup`, wildcards, TSR, priority ordering | **done** — 18 tests, 0 allocs, benchmarked vs `ServeMux` |
+| M1 | Radix router — insertion, tree walk, wildcards, TSR, priority ordering | **done** — 0 allocs, benchmarked against `ServeMux` |
 | M2 | `Context` — pooling, `reset`, params/query/form/keys, response helpers, `Copy` | **done** — accessors are allocation-free |
 | M3 | `Engine` — `ServeHTTP`, `sync.Pool` wiring, 404/405/redirects | **done** — `NoRoute`, 405 + `Allow`, trailing-slash redirects, `Run`, race-clean pooling |
 | M4 | `RouterGroup` + chain execution — nesting, `Next`, `Abort`, `IRouter`/`IRoutes` | **done** |
-| — | Flat root package, `benchmarks/` split out, godoc pass | **done** |
+| P4 | Flat root package, `benchmarks/` split out, godoc pass | **done** |
 | M5 | `binding/` + `render/` | not started |
 | M6 | `middleware/` — logger, recovery, cors, requestid | not started |
 | M7 | `examples/`, published baseline numbers | not started |
+
+**M1-M4 and P4 are complete**: 111 tests, clean under `-race`, allocation-free end to end.
+[ROADMAP.md](ROADMAP.md) breaks each of these into commit-sized steps and records the decisions
+behind them.
 
 A milestone starts only when the previous one's tests and benchmarks pass. The whole value
 proposition here is a performance claim, and a claim never measured at each layer cannot be
