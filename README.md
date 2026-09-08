@@ -6,9 +6,9 @@ No third-party dependencies. No reflection, no maps, and no allocations on the r
 
 > **Status: pre-alpha, under construction.** The radix router, the pooled request context, the
 > `Engine`, route groups and the middleware chain are built and tested — the code under
-> [Using it today](#using-it-today) runs. Still missing: `Run`, custom 404/405 handling,
-> trailing-slash redirects, and the `binding/`, `render/` and `middleware/` packages. See
-> [Roadmap](#roadmap) for exactly where things stand.
+> [Using it today](#using-it-today) runs, including `NoRoute`, 405 handling, trailing-slash
+> redirects and `Run`. Still missing: the `binding/`, `render/` and `middleware/` packages.
+> See [Roadmap](#roadmap) for exactly where things stand.
 >
 > Work in progress lives in the `nesting/` package while the core is being assembled, so the
 > import path is `github.com/subhanjanops/gomicro/nesting` for now. It moves to the flat root
@@ -169,8 +169,7 @@ api.GET("/users/:id", func(c *gomicro.Context) {
     c.JSON(200, User{ID: c.Param("id")})
 })
 
-// Engine implements http.Handler; Run(":8080") is not built yet.
-http.ListenAndServe(":8080", r)
+r.Run(":8080") // or build your own http.Server — Engine is an http.Handler
 ```
 
 Middleware is an ordinary handler that calls `Next`:
@@ -228,11 +227,18 @@ gofmt -l .                                   # should print nothing
 
 go test ./...                                # unit tests
 go test -run TestAddRouteLookup ./nesting/   # a single test
-go test -race ./...
+go test -race ./...                          # see the note below on Windows
 
 go test ./nesting/ -bench=. -benchmem -run XXX
 go test ./nesting/ -bench=BenchmarkRouterParam -benchmem -count=10 > new.txt
 benchstat old.txt new.txt                    # required for perf-sensitive changes
+```
+
+On Windows, ThreadSanitizer may fail to start (`ThreadSanitizer failed to allocate ...
+error code: 87`). Run the race detector in Linux instead:
+
+```sh
+MSYS_NO_PATHCONV=1 docker run --rm -v "$(pwd -W)":/src -w /src golang:1.25 go test -race ./...
 ```
 
 ### PR checklist
@@ -252,7 +258,7 @@ benchstat old.txt new.txt                    # required for perf-sensitive chang
 |---|---|---|
 | M1 | Radix router — `addRoute`, `Lookup`, wildcards, TSR, priority ordering | **done** — 18 tests, 0 allocs, benchmarked vs `ServeMux` |
 | M2 | `Context` — pooling, `reset`, params/query/form/keys, response helpers, `Copy` | **done** — accessors are allocation-free |
-| M3 | `Engine` — `ServeHTTP`, `sync.Pool` wiring, 404/405/redirects | **in progress** — serving and pooling done; `NoRoute`, 405 + `Allow`, trailing-slash redirects and `Run` remain |
+| M3 | `Engine` — `ServeHTTP`, `sync.Pool` wiring, 404/405/redirects | **done** — `NoRoute`, 405 + `Allow`, trailing-slash redirects, `Run`, race-clean pooling |
 | M4 | `RouterGroup` + chain execution — nesting, `Next`, `Abort` | **done** — bar the `IRouter`/`IRoutes` interfaces |
 | M5 | `binding/` + `render/` | not started |
 | M6 | `middleware/` — logger, recovery, cors, requestid | not started |
