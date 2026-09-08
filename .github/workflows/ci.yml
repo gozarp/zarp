@@ -60,11 +60,36 @@ jobs:
 
       # The race detector cannot start on some Windows builds, so this is the
       # authoritative run for it.
-      - name: Test (race)
-        run: go test -race -covermode=atomic -coverprofile=coverage.out ./...
+      #
+      # Coverage is measured over the library packages only. examples/ are
+      # main packages verified by `go build` and by being run; counting their
+      # main() as uncovered would only dilute the number the gate reads.
+      - name: Test (race + coverage)
+        run: |
+          go test -race -covermode=atomic -coverprofile=coverage.out             . ./binding ./render ./middleware
 
-      - name: Coverage summary
-        run: go tool cover -func=coverage.out | tail -1
+      - name: Coverage gate (minimum 90%)
+        run: |
+          go tool cover -func=coverage.out | tail -20
+          pct=$(go tool cover -func=coverage.out | awk '/^total:/ {print $3}' | tr -d '%')
+          # sh cannot compare decimals, so awk does the arithmetic.
+          awk -v pct="$pct" 'BEGIN {
+            if (pct + 0 < 90) {
+              printf "FAIL: coverage %.1f%% is below the 90%% minimum
+", pct
+              exit 1
+            }
+            printf "coverage %.1f%%, minimum 90%%
+", pct
+          }'
+
+      - name: Upload coverage profile
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage.out
+          if-no-files-found: warn
 
   dependencies:
     runs-on: ubuntu-latest
