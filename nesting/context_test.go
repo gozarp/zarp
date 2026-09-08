@@ -161,7 +161,7 @@ func TestResetClearsEveryField(t *testing.T) {
 		handlers:   []HandlerFunc{func(*Context) {}},
 		queryCache: map[string][]string{"a": {"b"}},
 		keys:       map[string]any{"secret": 1},
-		engine:     "something",
+		engine:     New(),
 		fullPath:   "/old/:id",
 		index:      7,
 	}

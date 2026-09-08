@@ -2,7 +2,13 @@ package nesting
 
 import (
 	"net/http"
+	"strings"
 	"sync"
+)
+
+const (
+	default404Body = "404 page not found"
+	default405Body = "405 method not allowed"
 )
 
 // Engine ties the router, the Context pool and the handler chain together. It
@@ -19,9 +25,13 @@ type Engine struct {
 	// load a Get is usually a pointer bump with no lock and no allocation.
 	pool sync.Pool
 
-	// noRoute and noMethod are wired up in roadmap steps 2.5 and 2.6.
-	noRoute  []HandlerFunc
-	noMethod []HandlerFunc
+	// noRoute and noMethod are the user's fallback handlers; allNoRoute and
+	// allNoMethod are those same handlers behind the root group's middleware,
+	// resolved at registration so a miss costs no more than a hit.
+	noRoute     []HandlerFunc
+	noMethod    []HandlerFunc
+	allNoRoute  []HandlerFunc
+	allNoMethod []HandlerFunc
 
 	// RedirectTrailingSlash acts on the router's tsr hint: /foo/ redirects to
 	// /foo when only the latter is registered, and the other way round.
@@ -41,20 +51,6 @@ type Engine struct {
 	MaxMultipartMemory int64
 }
 
-// Engine satisfies the hooks Context reads. Roadmap step 2.8 replaces the
-// interface with a typed field.
-var _ engineOptions = (*Engine)(nil)
-
-// Use adds middleware to the root group. It shadows the embedded
-// RouterGroup.Use only to return *Engine, so engine-level calls stay chainable.
-func (e *Engine) Use(middleware ...HandlerFunc) *Engine {
-	e.RouterGroup.Use(middleware...)
-	return e
-}
-
-func (e *Engine) trustForwardedForHeader() bool { return e.ForwardedByClientIP }
-func (e *Engine) maxMultipartMemory() int64     { return e.MaxMultipartMemory }
-
 // New returns an Engine with no middleware attached.
 //
 // There is deliberately no Default() constructor bundling a logger and
@@ -70,6 +66,46 @@ func New() *Engine {
 	e.RouterGroup.engine = e
 	e.pool.New = func() any { return e.allocateContext() }
 	return e
+}
+
+// Use adds middleware to the root group. It shadows the embedded
+// RouterGroup.Use to return *Engine and to refresh the fallback chains, which
+// also run the root group's middleware.
+func (e *Engine) Use(middleware ...HandlerFunc) *Engine {
+	e.RouterGroup.Use(middleware...)
+	e.rebuildFallbacks()
+	return e
+}
+
+// NoRoute sets the handlers run when no route matches. They run behind the root
+// group's middleware, so a logger attached with Use still sees 404s.
+func (e *Engine) NoRoute(handlers ...HandlerFunc) *Engine {
+	e.noRoute = handlers
+	e.rebuildFallbacks()
+	return e
+}
+
+// NoMethod sets the handlers run when a path exists under other methods and
+// HandleMethodNotAllowed is on.
+func (e *Engine) NoMethod(handlers ...HandlerFunc) *Engine {
+	e.noMethod = handlers
+	e.rebuildFallbacks()
+	return e
+}
+
+func (e *Engine) rebuildFallbacks() {
+	e.allNoRoute = e.combineHandlers(e.noRoute)
+	e.allNoMethod = e.combineHandlers(e.noMethod)
+}
+
+// Run starts an http.Server on addr with this Engine as its handler.
+//
+// It is a convenience for examples and small services and nothing more: it
+// leaves every timeout at its zero value, which is not what a public server
+// wants. Build your own http.Server — Engine is an http.Handler — as soon as
+// read/write timeouts or graceful shutdown matter.
+func (e *Engine) Run(addr string) error {
+	return http.ListenAndServe(addr, e)
 }
 
 // allocateContext builds a pooled Context. maxParams is read here, at the
@@ -102,7 +138,9 @@ func (e *Engine) handleRequest(c *Context) {
 		c.Params = make(Params, 0, n)
 	}
 
-	handlers, fullPath, _ := e.Lookup(c.Request.Method, c.Request.URL.Path, &c.Params)
+	method, path := c.Request.Method, c.Request.URL.Path
+
+	handlers, fullPath, tsr := e.Lookup(method, path, &c.Params)
 	if handlers != nil {
 		c.handlers = handlers
 		c.fullPath = fullPath
@@ -112,14 +150,82 @@ func (e *Engine) handleRequest(c *Context) {
 		return
 	}
 
-	// Trailing-slash redirects (step 2.7), 405 (2.6) and NoRoute (2.5) land
-	// here next; for now a miss is a plain 404.
-	e.serveNotFound(c)
+	// The same path with a trailing slash added or removed is registered.
+	// CONNECT targets an authority, not a path, so it is never redirected.
+	if tsr && e.RedirectTrailingSlash && method != http.MethodConnect && path != "/" {
+		e.redirectTrailingSlash(c)
+		return
+	}
+
+	if e.HandleMethodNotAllowed {
+		if allow := e.allowedMethods(path, method); allow != "" {
+			c.Header("Allow", allow)
+			c.handlers = e.allNoMethod
+			e.serveFallback(c, http.StatusMethodNotAllowed, default405Body)
+			return
+		}
+	}
+
+	c.handlers = e.allNoRoute
+	e.serveFallback(c, http.StatusNotFound, default404Body)
 }
 
-func (e *Engine) serveNotFound(c *Context) {
-	c.Status(http.StatusNotFound)
-	c.writeContentType("text/plain; charset=utf-8")
-	c.writermem.WriteString("404 page not found")
+// serveFallback runs a fallback chain, then supplies a default body only if
+// nothing in the chain wrote one and nothing changed the status. A custom
+// NoRoute handler therefore replaces the default rather than appending to it.
+func (e *Engine) serveFallback(c *Context, code int, body string) {
+	c.Status(code)
+	c.Next()
+
+	if c.Writer.Written() {
+		return
+	}
+	if c.Writer.Status() == code {
+		c.writeContentType("text/plain; charset=utf-8")
+		c.writermem.WriteString(body)
+		return
+	}
 	c.Writer.WriteHeaderNow()
+}
+
+// redirectTrailingSlash answers with the path the router says would have
+// matched. GET keeps its method on a 301; anything else uses 307, which
+// obliges the client to preserve the method and body.
+func (e *Engine) redirectTrailingSlash(c *Context) {
+	req := c.Request
+	path := req.URL.Path
+
+	if len(path) > 1 && path[len(path)-1] == '/' {
+		path = path[:len(path)-1]
+	} else {
+		path += "/"
+	}
+
+	code := http.StatusMovedPermanently
+	if req.Method != http.MethodGet {
+		code = http.StatusTemporaryRedirect
+	}
+
+	req.URL.Path = path
+	http.Redirect(c.Writer, req, req.URL.String(), code)
+	c.Writer.WriteHeaderNow()
+}
+
+// allowedMethods returns the comma-separated methods, other than except, that
+// have a handler for path — the value of the Allow header on a 405. It walks
+// every other tree, which is why HandleMethodNotAllowed is off by default.
+func (e *Engine) allowedMethods(path, except string) string {
+	var b strings.Builder
+	for i := range e.trees {
+		if e.trees[i].method == except {
+			continue
+		}
+		if handlers, _, _ := e.trees[i].root.getValue(path, nil); handlers != nil {
+			if b.Len() > 0 {
+				b.WriteString(", ")
+			}
+			b.WriteString(e.trees[i].method)
+		}
+	}
+	return b.String()
 }

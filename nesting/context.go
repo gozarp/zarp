@@ -123,7 +123,7 @@ type Context struct {
 	queryCache url.Values
 	formCache  url.Values
 	keys       map[string]any
-	engine     any // becomes *Engine in build order step 3
+	engine     *Engine
 	fullPath   string
 	writermem  responseWriter
 	index      int8
@@ -151,22 +151,11 @@ func (c *Context) reset(w http.ResponseWriter, r *http.Request) {
 // memory before spilling to temporary files.
 const defaultMultipartMemory = 32 << 20 // 32 MB
 
-// engineOptions is the slice of *Engine that Context reads. It exists as an
-// interface only because Engine does not exist yet (build order step 3); once
-// it does, c.engine becomes *Engine and this can go away.
-type engineOptions interface {
-	trustForwardedForHeader() bool
-	maxMultipartMemory() int64
-}
-
-func (c *Context) options() (engineOptions, bool) {
-	o, ok := c.engine.(engineOptions)
-	return o, ok
-}
-
+// maxMultipartMemory falls back to the package default for a Context built
+// without an Engine, which is how the unit tests construct one.
 func (c *Context) maxMultipartMemory() int64 {
-	if o, ok := c.options(); ok {
-		return o.maxMultipartMemory()
+	if c.engine != nil && c.engine.MaxMultipartMemory > 0 {
+		return c.engine.MaxMultipartMemory
 	}
 	return defaultMultipartMemory
 }
@@ -486,10 +475,11 @@ func (c *Context) ClientIP() string {
 	return addr
 }
 
-// trustForwardedFor defaults to true, matching the flag's default on Engine.
+// trustForwardedFor defaults to true without an Engine, matching the flag's
+// default in New.
 func (c *Context) trustForwardedFor() bool {
-	if o, ok := c.options(); ok {
-		return o.trustForwardedForHeader()
+	if c.engine != nil {
+		return c.engine.ForwardedByClientIP
 	}
 	return true
 }

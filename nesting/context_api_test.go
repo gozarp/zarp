@@ -13,15 +13,6 @@ import (
 	"time"
 )
 
-// testEngine stands in for *Engine until build order step 3.
-type testEngine struct {
-	trustForwarded bool
-	multipartLimit int64
-}
-
-func (e *testEngine) trustForwardedForHeader() bool { return e.trustForwarded }
-func (e *testEngine) maxMultipartMemory() int64     { return e.multipartLimit }
-
 func ctxFor(method, target string, body string) (*Context, *httptest.ResponseRecorder) {
 	rec := httptest.NewRecorder()
 	var r *http.Request
@@ -139,7 +130,7 @@ func TestFormFile(t *testing.T) {
 	rec := httptest.NewRecorder()
 	r := httptest.NewRequest("POST", "/upload", &body)
 	r.Header.Set("Content-Type", w.FormDataContentType())
-	c := &Context{engine: &testEngine{multipartLimit: 1 << 20}}
+	c := &Context{engine: &Engine{MaxMultipartMemory: 1 << 20}}
 	c.reset(rec, r)
 
 	fh, err := c.FormFile("upload")
@@ -316,7 +307,7 @@ func TestClientIP(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			c, _ := ctxFor("GET", "/", "")
-			c.engine = &testEngine{trustForwarded: tc.trust}
+			c.engine = &Engine{ForwardedByClientIP: tc.trust}
 			c.Request.RemoteAddr = tc.remote
 			if tc.xff != "" {
 				c.Request.Header.Set("X-Forwarded-For", tc.xff)
@@ -520,7 +511,7 @@ func TestCopyDetaches(t *testing.T) {
 	c.Params = append(c.Params, Param{"id", "42"})
 	c.Set("user", "octocat")
 	c.fullPath = "/user/:id"
-	c.engine = &testEngine{}
+	c.engine = New()
 
 	cp := c.Copy()
 
