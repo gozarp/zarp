@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/subhanjanops/gomicro"
-	"github.com/subhanjanops/gomicro/render"
+	"github.com/gozarp/zarp"
+	"github.com/gozarp/zarp/render"
 )
 
 func TestLoadFiles(t *testing.T) {
@@ -25,7 +25,7 @@ func TestLoadFiles(t *testing.T) {
 		t.Fatalf("LoadFiles: %v", err)
 	}
 
-	rec := serve(func(c *gomicro.Context) {
+	rec := serve(func(c *zarp.Context) {
 		views.HTML(c, http.StatusOK, "page.html", "hello")
 	})
 	if got := rec.Body.String(); got != "<p>hello</p>" {
@@ -56,7 +56,7 @@ func TestHTMLWholeTemplateSet(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	rec := serve(func(c *gomicro.Context) {
+	rec := serve(func(c *zarp.Context) {
 		render.With(c, http.StatusOK, render.HTMLRender{Template: views.Template(), Data: nil})
 	})
 	if got := rec.Body.String(); got != "solo" {
@@ -75,7 +75,7 @@ func TestHTMLUnknownTemplateName(t *testing.T) {
 	}
 
 	var renderErr error
-	serve(func(c *gomicro.Context) {
+	serve(func(c *zarp.Context) {
 		renderErr = views.HTML(c, http.StatusOK, "nope.html", nil)
 	})
 	if renderErr == nil {
@@ -93,7 +93,7 @@ func TestRedirectRenderWriteContentTypeIsANoOp(t *testing.T) {
 }
 
 func TestIndentedJSONCustomIndent(t *testing.T) {
-	rec := serve(func(c *gomicro.Context) {
+	rec := serve(func(c *zarp.Context) {
 		render.With(c, http.StatusOK, render.IndentedJSONRender{
 			Data:   map[string]int{"a": 1},
 			Prefix: "",
@@ -107,7 +107,7 @@ func TestIndentedJSONCustomIndent(t *testing.T) {
 
 func TestIndentedJSONEncodeError(t *testing.T) {
 	var err error
-	serve(func(c *gomicro.Context) {
+	serve(func(c *zarp.Context) {
 		err = render.IndentedJSON(c, http.StatusOK, make(chan int))
 	})
 	if err == nil {
@@ -117,7 +117,7 @@ func TestIndentedJSONEncodeError(t *testing.T) {
 
 func TestXMLEncodeError(t *testing.T) {
 	var err error
-	serve(func(c *gomicro.Context) {
+	serve(func(c *zarp.Context) {
 		err = render.XML(c, http.StatusOK, make(chan int))
 	})
 	if err == nil {

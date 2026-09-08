@@ -1,4 +1,4 @@
-package gomicro
+package zarp
 
 import (
 	"net/http"
@@ -21,7 +21,7 @@ type RouterGroup struct {
 // IRoutes is anything routes and middleware can be registered on. *Engine and
 // *RouterGroup both satisfy it, so a setup function can take either:
 //
-//	func registerUserRoutes(r gomicro.IRoutes) { r.GET("/users/:id", show) }
+//	func registerUserRoutes(r zarp.IRoutes) { r.GET("/users/:id", show) }
 //
 // The methods keep their concrete *RouterGroup return type rather than
 // returning the interface, so chaining does not erase the type.
@@ -96,7 +96,7 @@ func (g *RouterGroup) BasePath() string {
 // Handle registers handlers for an arbitrary HTTP method.
 func (g *RouterGroup) Handle(method, relativePath string, handlers ...HandlerFunc) *RouterGroup {
 	if !isValidMethod(method) {
-		panic("gomicro: http method " + method + " is not valid")
+		panic("zarp: http method " + method + " is not valid")
 	}
 	return g.handle(method, relativePath, handlers)
 }
@@ -133,7 +133,7 @@ func (g *RouterGroup) HEAD(relativePath string, handlers ...HandlerFunc) *Router
 	return g.handle(http.MethodHead, relativePath, handlers)
 }
 
-// OPTIONS registers handlers for an OPTIONS route. gomicro does not answer
+// OPTIONS registers handlers for an OPTIONS route. zarp does not answer
 // OPTIONS on its own, so a CORS preflight needs either this or the CORS
 // middleware.
 func (g *RouterGroup) OPTIONS(relativePath string, handlers ...HandlerFunc) *RouterGroup {
@@ -165,7 +165,7 @@ func (g *RouterGroup) handle(method, relativePath string, handlers []HandlerFunc
 func (g *RouterGroup) combineHandlers(handlers []HandlerFunc) []HandlerFunc {
 	size := len(g.Handlers) + len(handlers)
 	if size >= int(abortIndex) {
-		panic("gomicro: too many handlers")
+		panic("zarp: too many handlers")
 	}
 	merged := make([]HandlerFunc, size)
 	copy(merged, g.Handlers)

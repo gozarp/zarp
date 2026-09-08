@@ -1,4 +1,4 @@
-package gomicro
+package zarp
 
 import (
 	"bufio"
@@ -116,7 +116,7 @@ func (w *responseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	}
 	h, ok := w.ResponseWriter.(http.Hijacker)
 	if !ok {
-		return nil, nil, errors.New("gomicro: the ResponseWriter does not implement http.Hijacker")
+		return nil, nil, errors.New("zarp: the ResponseWriter does not implement http.Hijacker")
 	}
 	return h.Hijack()
 }
@@ -344,7 +344,7 @@ func (c *Context) MustGet(key string) any {
 	if v, ok := c.Get(key); ok {
 		return v
 	}
-	panic("gomicro: key " + strconv.Quote(key) + " does not exist")
+	panic("zarp: key " + strconv.Quote(key) + " does not exist")
 }
 
 // GetString returns the value stored under key as a string, or "".
@@ -572,7 +572,7 @@ func (c *Context) Data(code int, contentType string, data []byte) {
 func (c *Context) Redirect(code int, location string) {
 	if (code < http.StatusMultipleChoices || code > http.StatusPermanentRedirect) &&
 		code != http.StatusCreated {
-		panic("gomicro: cannot redirect with status code " + strconv.Itoa(code))
+		panic("zarp: cannot redirect with status code " + strconv.Itoa(code))
 	}
 	c.Header("Location", location)
 	c.Status(code)

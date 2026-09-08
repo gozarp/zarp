@@ -1,7 +1,7 @@
-// Package benchmarks holds gomicro's end-to-end performance suite.
+// Package benchmarks holds zarp's end-to-end performance suite.
 //
 // It is a separate package so `go test ./...` stays fast, and it imports
-// gomicro exactly as a user would — registration goes through the exported verb
+// zarp exactly as a user would — registration goes through the exported verb
 // methods, so nothing here can measure a shortcut that real code cannot take.
 //
 //	go test -bench=. -benchmem ./benchmarks/...
@@ -12,7 +12,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/subhanjanops/gomicro"
+	"github.com/gozarp/zarp"
 )
 
 // nopWriter measures the framework rather than httptest's buffer growth. It
@@ -41,11 +41,11 @@ func benchServe(b *testing.B, h http.Handler, method, target string) {
 	}
 }
 
-func engine() *gomicro.Engine {
-	e := gomicro.New()
-	e.GET("/ping", func(c *gomicro.Context) { c.Text(http.StatusOK, "pong") })
-	e.GET("/user/:id", func(c *gomicro.Context) { c.Text(http.StatusOK, c.Param("id")) })
-	e.GET("/j", func(c *gomicro.Context) {
+func engine() *zarp.Engine {
+	e := zarp.New()
+	e.GET("/ping", func(c *zarp.Context) { c.Text(http.StatusOK, "pong") })
+	e.GET("/user/:id", func(c *zarp.Context) { c.Text(http.StatusOK, c.Param("id")) })
+	e.GET("/j", func(c *zarp.Context) {
 		c.JSON(http.StatusOK, map[string]string{"message": "pong"})
 	})
 	return e
@@ -76,24 +76,24 @@ func BenchmarkEngine404(b *testing.B)     { benchServe(b, engine(), "GET", "/nop
 // with String rather than Text. The difference is the fmt argument boxing,
 // which is the handler's allocation, not the engine's.
 func BenchmarkEngineStringFmt(b *testing.B) {
-	e := gomicro.New()
-	e.GET("/user/:id", func(c *gomicro.Context) {
+	e := zarp.New()
+	e.GET("/user/:id", func(c *zarp.Context) {
 		c.String(http.StatusOK, "%s", c.Param("id"))
 	})
 	benchServe(b, e, "GET", "/user/42")
 }
 
 func BenchmarkEngine405(b *testing.B) {
-	e := gomicro.New()
+	e := zarp.New()
 	e.HandleMethodNotAllowed = true
-	e.GET("/x", func(c *gomicro.Context) {})
-	e.PUT("/x", func(c *gomicro.Context) {})
+	e.GET("/x", func(c *zarp.Context) {})
+	e.PUT("/x", func(c *zarp.Context) {})
 	benchServe(b, e, "POST", "/x")
 }
 
 func BenchmarkEngineRedirect(b *testing.B) {
-	e := gomicro.New()
-	e.GET("/dir/", func(c *gomicro.Context) {})
+	e := zarp.New()
+	e.GET("/dir/", func(c *zarp.Context) {})
 	benchServe(b, e, "GET", "/dir")
 }
 
@@ -112,12 +112,12 @@ func BenchmarkEngineParallel(b *testing.B) {
 
 // ---------------------------------------------------------------- middleware
 
-func chainOf(n int) *gomicro.Engine {
-	e := gomicro.New()
+func chainOf(n int) *zarp.Engine {
+	e := zarp.New()
 	for range n {
-		e.Use(func(c *gomicro.Context) { c.Next() })
+		e.Use(func(c *zarp.Context) { c.Next() })
 	}
-	e.GET("/x", func(c *gomicro.Context) { c.Text(http.StatusOK, "ok") })
+	e.GET("/x", func(c *zarp.Context) { c.Text(http.StatusOK, "ok") })
 	return e
 }
 
@@ -127,9 +127,9 @@ func BenchmarkChain3(b *testing.B)  { benchServe(b, chainOf(3), "GET", "/x") }
 func BenchmarkChain10(b *testing.B) { benchServe(b, chainOf(10), "GET", "/x") }
 
 func BenchmarkGroupedRoute(b *testing.B) {
-	e := gomicro.New()
-	e.Use(func(c *gomicro.Context) { c.Next() })
-	v1 := e.Group("/api/v1", func(c *gomicro.Context) { c.Next() })
-	v1.GET("/users/:id", func(c *gomicro.Context) { c.Text(http.StatusOK, c.Param("id")) })
+	e := zarp.New()
+	e.Use(func(c *zarp.Context) { c.Next() })
+	v1 := e.Group("/api/v1", func(c *zarp.Context) { c.Next() })
+	v1.GET("/users/:id", func(c *zarp.Context) { c.Text(http.StatusOK, c.Param("id")) })
 	benchServe(b, e, "GET", "/api/v1/users/42")
 }

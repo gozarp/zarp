@@ -11,17 +11,17 @@ import (
 	"testing"
 	"time"
 
-	"github.com/subhanjanops/gomicro"
-	"github.com/subhanjanops/gomicro/binding"
+	"github.com/gozarp/zarp"
+	"github.com/gozarp/zarp/binding"
 )
 
 // run registers a handler that binds, and returns whatever it recorded.
-func run(t *testing.T, method, target, body, contentType string, bind func(*gomicro.Context) error) (error, *httptest.ResponseRecorder) {
+func run(t *testing.T, method, target, body, contentType string, bind func(*zarp.Context) error) (error, *httptest.ResponseRecorder) {
 	t.Helper()
 	var bindErr error
 
-	e := gomicro.New()
-	e.Handle(method, "/u/:id", func(c *gomicro.Context) {
+	e := zarp.New()
+	e.Handle(method, "/u/:id", func(c *zarp.Context) {
 		bindErr = bind(c)
 	})
 
@@ -51,7 +51,7 @@ type user struct {
 func TestJSON(t *testing.T) {
 	var got user
 	err, _ := run(t, "POST", "/u/1", `{"name":"octocat","age":7,"tags":["a","b"],"admin":true}`,
-		binding.MIMEJSON, func(c *gomicro.Context) error { return binding.JSON(c, &got) })
+		binding.MIMEJSON, func(c *zarp.Context) error { return binding.JSON(c, &got) })
 
 	if err != nil {
 		t.Fatalf("bind: %v", err)
@@ -64,7 +64,7 @@ func TestJSON(t *testing.T) {
 func TestJSONEmptyBody(t *testing.T) {
 	var got user
 	err, _ := run(t, "POST", "/u/1", "", binding.MIMEJSON,
-		func(c *gomicro.Context) error { return binding.JSON(c, &got) })
+		func(c *zarp.Context) error { return binding.JSON(c, &got) })
 
 	if !errors.Is(err, binding.ErrEmptyBody) {
 		t.Errorf("err = %v, want ErrEmptyBody", err)
@@ -74,7 +74,7 @@ func TestJSONEmptyBody(t *testing.T) {
 func TestJSONMalformed(t *testing.T) {
 	var got user
 	err, _ := run(t, "POST", "/u/1", `{"name":`, binding.MIMEJSON,
-		func(c *gomicro.Context) error { return binding.JSON(c, &got) })
+		func(c *zarp.Context) error { return binding.JSON(c, &got) })
 
 	if err == nil {
 		t.Fatal("want an error")
@@ -91,7 +91,7 @@ func TestJSONBodyCap(t *testing.T) {
 
 	var got user
 	err, _ := run(t, "POST", "/u/1", `{"name":"`+strings.Repeat("x", 200)+`"}`, binding.MIMEJSON,
-		func(c *gomicro.Context) error { return binding.JSON(c, &got) })
+		func(c *zarp.Context) error { return binding.JSON(c, &got) })
 
 	if err == nil || !strings.Contains(err.Error(), "exceeds") {
 		t.Errorf("err = %v, want a body-size error", err)
@@ -104,7 +104,7 @@ func TestJSONDisallowUnknownFields(t *testing.T) {
 
 	var got user
 	err, _ := run(t, "POST", "/u/1", `{"name":"x","nope":1}`, binding.MIMEJSON,
-		func(c *gomicro.Context) error { return binding.JSON(c, &got) })
+		func(c *zarp.Context) error { return binding.JSON(c, &got) })
 
 	if err == nil || !strings.Contains(err.Error(), "nope") {
 		t.Errorf("err = %v, want it to name the unknown field", err)
@@ -130,7 +130,7 @@ func TestQuery(t *testing.T) {
 	var got search
 	target := "/u/1?q=go&page=2&tag=a&tag=b&ratio=1.5&live=true&timeout=3s&limit=10&ByName=named"
 	err, _ := run(t, "GET", target, "", "",
-		func(c *gomicro.Context) error { return binding.Query(c, &got) })
+		func(c *zarp.Context) error { return binding.Query(c, &got) })
 
 	if err != nil {
 		t.Fatalf("bind: %v", err)
@@ -159,7 +159,7 @@ func TestQuery(t *testing.T) {
 func TestQuerySkipsDashTag(t *testing.T) {
 	var got search
 	err, _ := run(t, "GET", "/u/1?-=nope&Skipped=nope", "", "",
-		func(c *gomicro.Context) error { return binding.Query(c, &got) })
+		func(c *zarp.Context) error { return binding.Query(c, &got) })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -171,7 +171,7 @@ func TestQuerySkipsDashTag(t *testing.T) {
 func TestQueryBadValue(t *testing.T) {
 	var got search
 	err, _ := run(t, "GET", "/u/1?page=abc", "", "",
-		func(c *gomicro.Context) error { return binding.Query(c, &got) })
+		func(c *zarp.Context) error { return binding.Query(c, &got) })
 
 	if err == nil || !strings.Contains(err.Error(), "Page") {
 		t.Errorf("err = %v, want it to name the field", err)
@@ -181,7 +181,7 @@ func TestQueryBadValue(t *testing.T) {
 func TestForm(t *testing.T) {
 	var got search
 	err, _ := run(t, "POST", "/u/1", "q=go&page=3", binding.MIMEPOSTForm,
-		func(c *gomicro.Context) error { return binding.Form(c, &got) })
+		func(c *zarp.Context) error { return binding.Form(c, &got) })
 
 	if err != nil {
 		t.Fatalf("bind: %v", err)
@@ -202,8 +202,8 @@ func TestMultipart(t *testing.T) {
 
 	var got search
 	var fileName string
-	e := gomicro.New()
-	e.POST("/upload", func(c *gomicro.Context) {
+	e := zarp.New()
+	e.POST("/upload", func(c *zarp.Context) {
 		if err := binding.Multipart(c, &got); err != nil {
 			t.Errorf("bind: %v", err)
 		}
@@ -233,8 +233,8 @@ func TestURI(t *testing.T) {
 	}
 	var got params
 
-	e := gomicro.New()
-	e.GET("/u/:id/:slug", func(c *gomicro.Context) {
+	e := zarp.New()
+	e.GET("/u/:id/:slug", func(c *zarp.Context) {
 		if err := binding.URI(c, &got); err != nil {
 			t.Errorf("bind: %v", err)
 		}
@@ -253,8 +253,8 @@ func TestHeader(t *testing.T) {
 	}
 	var got headers
 
-	e := gomicro.New()
-	e.GET("/h", func(c *gomicro.Context) {
+	e := zarp.New()
+	e.GET("/h", func(c *zarp.Context) {
 		if err := binding.Header(c, &got); err != nil {
 			t.Errorf("bind: %v", err)
 		}
@@ -293,7 +293,7 @@ func TestDefault(t *testing.T) {
 func TestBindPicksByContentType(t *testing.T) {
 	var got user
 	err, _ := run(t, "POST", "/u/1", `{"name":"via-bind"}`, binding.MIMEJSON,
-		func(c *gomicro.Context) error { return binding.Bind(c, &got) })
+		func(c *zarp.Context) error { return binding.Bind(c, &got) })
 
 	if err != nil || got.Name != "via-bind" {
 		t.Errorf("err=%v got=%+v", err, got)
@@ -303,7 +303,7 @@ func TestBindPicksByContentType(t *testing.T) {
 func TestBindRejectsNonPointer(t *testing.T) {
 	var got search
 	err, _ := run(t, "GET", "/u/1?q=x", "", "",
-		func(c *gomicro.Context) error { return binding.Query(c, got) })
+		func(c *zarp.Context) error { return binding.Query(c, got) })
 
 	if err == nil || !strings.Contains(err.Error(), "pointer") {
 		t.Errorf("err = %v, want a pointer complaint", err)
@@ -328,7 +328,7 @@ func valid() string {
 func TestValidateAccepts(t *testing.T) {
 	var got account
 	err, _ := run(t, "GET", "/u/1?"+valid(), "", "",
-		func(c *gomicro.Context) error { return binding.Query(c, &got) })
+		func(c *zarp.Context) error { return binding.Query(c, &got) })
 	if err != nil {
 		t.Fatalf("valid input rejected: %v", err)
 	}
@@ -348,7 +348,7 @@ func TestValidateRules(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var got account
 			err, _ := run(t, "GET", "/u/1?"+tc.query, "", "",
-				func(c *gomicro.Context) error { return binding.Query(c, &got) })
+				func(c *zarp.Context) error { return binding.Query(c, &got) })
 
 			if err == nil {
 				t.Fatalf("want a validation error naming %s", tc.wantField)
@@ -363,7 +363,7 @@ func TestValidateRules(t *testing.T) {
 func TestValidateReportsEveryFailure(t *testing.T) {
 	var got account
 	err, _ := run(t, "GET", "/u/1?name=o&email=nope&role=root&age=1&code=x", "", "",
-		func(c *gomicro.Context) error { return binding.Query(c, &got) })
+		func(c *zarp.Context) error { return binding.Query(c, &got) })
 
 	var errs binding.ValidationErrors
 	if !errors.As(err, &errs) {
@@ -381,7 +381,7 @@ func TestValidateOptionalFieldsSkipRules(t *testing.T) {
 	}
 	var got optional
 	err, _ := run(t, "GET", "/u/1", "", "",
-		func(c *gomicro.Context) error { return binding.Query(c, &got) })
+		func(c *zarp.Context) error { return binding.Query(c, &got) })
 	if err != nil {
 		t.Errorf("absent optional field failed its bound: %v", err)
 	}
@@ -397,7 +397,7 @@ func TestValidateNestedStruct(t *testing.T) {
 	}
 	var got outer
 	err, _ := run(t, "GET", "/u/1?name=x", "", "",
-		func(c *gomicro.Context) error { return binding.Query(c, &got) })
+		func(c *zarp.Context) error { return binding.Query(c, &got) })
 
 	if err == nil || !strings.Contains(err.Error(), "Code") {
 		t.Errorf("err = %v, want the nested field reported", err)
@@ -410,7 +410,7 @@ func TestValidateUnknownRule(t *testing.T) {
 	}
 	var got bad
 	err, _ := run(t, "GET", "/u/1?x=1", "", "",
-		func(c *gomicro.Context) error { return binding.Query(c, &got) })
+		func(c *zarp.Context) error { return binding.Query(c, &got) })
 
 	if err == nil || !strings.Contains(err.Error(), "unknown rule") {
 		t.Errorf("err = %v, want an unknown-rule complaint", err)
@@ -428,7 +428,7 @@ func TestEmailShapes(t *testing.T) {
 	for _, addr := range ok {
 		var got e
 		err, _ := run(t, "GET", "/u/1?addr="+url.QueryEscape(addr), "", "",
-			func(c *gomicro.Context) error { return binding.Query(c, &got) })
+			func(c *zarp.Context) error { return binding.Query(c, &got) })
 		if err != nil {
 			t.Errorf("%q rejected: %v", addr, err)
 		}
@@ -436,7 +436,7 @@ func TestEmailShapes(t *testing.T) {
 	for _, addr := range bad {
 		var got e
 		err, _ := run(t, "GET", "/u/1?addr="+url.QueryEscape(addr), "", "",
-			func(c *gomicro.Context) error { return binding.Query(c, &got) })
+			func(c *zarp.Context) error { return binding.Query(c, &got) })
 		if err == nil {
 			t.Errorf("%q accepted", addr)
 		}
@@ -446,8 +446,8 @@ func TestEmailShapes(t *testing.T) {
 // ---------------------------------------------------------------- benchmarks
 
 func BenchmarkBindQuery(b *testing.B) {
-	e := gomicro.New()
-	e.GET("/s", func(c *gomicro.Context) {
+	e := zarp.New()
+	e.GET("/s", func(c *zarp.Context) {
 		var s search
 		binding.Query(c, &s)
 	})

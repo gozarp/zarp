@@ -5,7 +5,7 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/subhanjanops/gomicro"
+	"github.com/gozarp/zarp"
 )
 
 const plainContentType = "text/plain; charset=utf-8"
@@ -51,16 +51,16 @@ func (r DataRender) Render(w http.ResponseWriter) error {
 
 // Text writes s verbatim with the given status code. Unlike String, s is data
 // rather than a format template.
-func Text(c *gomicro.Context, code int, s string) error {
+func Text(c *zarp.Context, code int, s string) error {
 	return With(c, code, TextRender{Format: s})
 }
 
 // String writes a formatted plain-text response.
-func String(c *gomicro.Context, code int, format string, values ...any) error {
+func String(c *zarp.Context, code int, format string, values ...any) error {
 	return With(c, code, TextRender{Format: format, Values: values})
 }
 
 // Data writes raw bytes under an explicit content type.
-func Data(c *gomicro.Context, code int, contentType string, data []byte) error {
+func Data(c *zarp.Context, code int, contentType string, data []byte) error {
 	return With(c, code, DataRender{ContentType: contentType, Data: data})
 }

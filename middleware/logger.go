@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/subhanjanops/gomicro"
+	"github.com/gozarp/zarp"
 )
 
 // Entry is one finished request, as the logger middleware sees it.
@@ -96,18 +96,18 @@ type LoggerConfig struct {
 // The default deliberately uses no logging library: this package depends on
 // nothing outside the standard library, and the logger you already use plugs in
 // through Sink. See LoggerWith.
-func Logger() gomicro.HandlerFunc {
+func Logger() zarp.HandlerFunc {
 	return LoggerWithConfig(LoggerConfig{})
 }
 
 // LoggerWith returns a Logger writing through sink.
-func LoggerWith(sink Sink) gomicro.HandlerFunc {
+func LoggerWith(sink Sink) zarp.HandlerFunc {
 	return LoggerWithConfig(LoggerConfig{Sink: sink})
 }
 
 // LoggerWithWriter returns a Logger writing plain aligned text to out, with no
 // logging library involved.
-func LoggerWithWriter(out io.Writer) gomicro.HandlerFunc {
+func LoggerWithWriter(out io.Writer) zarp.HandlerFunc {
 	return LoggerWithConfig(LoggerConfig{Sink: TextSink(out)})
 }
 
@@ -116,7 +116,7 @@ func LoggerWithWriter(out io.Writer) gomicro.HandlerFunc {
 // The entry's Path is the matched route pattern rather than the URL: it has
 // bounded cardinality, so logs and metrics group by route instead of by
 // customer id. The raw URL is in the same entry when it is genuinely needed.
-func LoggerWithConfig(cfg LoggerConfig) gomicro.HandlerFunc {
+func LoggerWithConfig(cfg LoggerConfig) zarp.HandlerFunc {
 	sink := cfg.Sink
 	if sink == nil {
 		sink = TextSink(os.Stderr)
@@ -126,7 +126,7 @@ func LoggerWithConfig(cfg LoggerConfig) gomicro.HandlerFunc {
 	// skipped paths at most, and this runs on every request.
 	skip := append([]string(nil), cfg.SkipPaths...)
 
-	return func(c *gomicro.Context) {
+	return func(c *zarp.Context) {
 		path := c.Request.URL.Path
 		for _, s := range skip {
 			if s == path {
@@ -157,7 +157,7 @@ func LoggerWithConfig(cfg LoggerConfig) gomicro.HandlerFunc {
 	}
 }
 
-func requestURL(c *gomicro.Context) string {
+func requestURL(c *zarp.Context) string {
 	u := c.Request.URL
 	if u.RawQuery == "" {
 		return u.Path
@@ -184,7 +184,7 @@ func SlogSink(l *slog.Logger) Sink {
 
 // TextSink writes aligned plain text to out, with no logging library at all:
 //
-//	[gomicro] 2026/09/07 19:04:11 | 200 |     1.204ms |       127.0.0.1 | GET     /user/:id
+//	[zarp] 2026/09/07 19:04:11 | 200 |     1.204ms |       127.0.0.1 | GET     /user/:id
 //
 // It appends into a pooled buffer and never builds a string, so it is the
 // cheapest sink here — useful for benchmarks and for services that only want a
@@ -208,7 +208,7 @@ func writeText(out io.Writer, e Entry) {
 	bufPtr := lineBuffers.Get().(*[]byte)
 	b := (*bufPtr)[:0]
 
-	b = append(b, "[gomicro] "...)
+	b = append(b, "[zarp] "...)
 	b = e.Start.AppendFormat(b, "2006/01/02 15:04:05")
 	b = append(b, " | "...)
 	b = strconv.AppendInt(b, int64(e.Status), 10)

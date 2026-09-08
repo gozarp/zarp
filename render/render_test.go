@@ -10,13 +10,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/subhanjanops/gomicro"
-	"github.com/subhanjanops/gomicro/render"
+	"github.com/gozarp/zarp"
+	"github.com/gozarp/zarp/render"
 )
 
 // serve runs h as the handler for GET /r and returns what it wrote.
-func serve(h gomicro.HandlerFunc) *httptest.ResponseRecorder {
-	e := gomicro.New()
+func serve(h zarp.HandlerFunc) *httptest.ResponseRecorder {
+	e := zarp.New()
 	e.GET("/r", h)
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, httptest.NewRequest("GET", "/r", nil))
@@ -32,7 +32,7 @@ type payload struct {
 // ---------------------------------------------------------------- JSON
 
 func TestJSON(t *testing.T) {
-	rec := serve(func(c *gomicro.Context) {
+	rec := serve(func(c *zarp.Context) {
 		if err := render.JSON(c, http.StatusCreated, map[string]string{"message": "ok"}); err != nil {
 			t.Errorf("render: %v", err)
 		}
@@ -53,8 +53,8 @@ func TestJSONMatchesContextJSON(t *testing.T) {
 	// The two paths exist on purpose; they must not disagree about output.
 	obj := payload{Name: "octocat", Age: 7}
 
-	viaRender := serve(func(c *gomicro.Context) { render.JSON(c, http.StatusOK, obj) })
-	viaContext := serve(func(c *gomicro.Context) { c.JSON(http.StatusOK, obj) })
+	viaRender := serve(func(c *zarp.Context) { render.JSON(c, http.StatusOK, obj) })
+	viaContext := serve(func(c *zarp.Context) { c.JSON(http.StatusOK, obj) })
 
 	if viaRender.Body.String() != viaContext.Body.String() {
 		t.Errorf("render.JSON = %q but c.JSON = %q", viaRender.Body, viaContext.Body)
@@ -65,7 +65,7 @@ func TestJSONMatchesContextJSON(t *testing.T) {
 }
 
 func TestIndentedJSON(t *testing.T) {
-	rec := serve(func(c *gomicro.Context) {
+	rec := serve(func(c *zarp.Context) {
 		render.IndentedJSON(c, http.StatusOK, payload{Name: "octocat", Age: 7})
 	})
 
@@ -77,7 +77,7 @@ func TestIndentedJSON(t *testing.T) {
 
 func TestJSONEncodeErrorIsReturned(t *testing.T) {
 	var err error
-	serve(func(c *gomicro.Context) {
+	serve(func(c *zarp.Context) {
 		err = render.JSON(c, http.StatusOK, make(chan int))
 	})
 	if err == nil {
@@ -88,7 +88,7 @@ func TestJSONEncodeErrorIsReturned(t *testing.T) {
 // ---------------------------------------------------------------- XML
 
 func TestXML(t *testing.T) {
-	rec := serve(func(c *gomicro.Context) {
+	rec := serve(func(c *zarp.Context) {
 		if err := render.XML(c, http.StatusOK, payload{Name: "octocat", Age: 7}); err != nil {
 			t.Errorf("render: %v", err)
 		}
@@ -106,7 +106,7 @@ func TestXML(t *testing.T) {
 // ---------------------------------------------------------------- text / data
 
 func TestText(t *testing.T) {
-	rec := serve(func(c *gomicro.Context) {
+	rec := serve(func(c *zarp.Context) {
 		render.Text(c, http.StatusOK, "100% sure: %s %d")
 	})
 	if got := rec.Body.String(); got != "100% sure: %s %d" {
@@ -115,7 +115,7 @@ func TestText(t *testing.T) {
 }
 
 func TestString(t *testing.T) {
-	rec := serve(func(c *gomicro.Context) {
+	rec := serve(func(c *zarp.Context) {
 		render.String(c, http.StatusOK, "hello %s, you are %d", "octocat", 7)
 	})
 	if got := rec.Body.String(); got != "hello octocat, you are 7" {
@@ -127,7 +127,7 @@ func TestString(t *testing.T) {
 }
 
 func TestData(t *testing.T) {
-	rec := serve(func(c *gomicro.Context) {
+	rec := serve(func(c *zarp.Context) {
 		render.Data(c, http.StatusOK, "image/png", []byte{0x89, 'P'})
 	})
 	if rec.Header().Get("Content-Type") != "image/png" || rec.Body.Len() != 2 {
@@ -136,7 +136,7 @@ func TestData(t *testing.T) {
 }
 
 func TestHandlerContentTypeWins(t *testing.T) {
-	rec := serve(func(c *gomicro.Context) {
+	rec := serve(func(c *zarp.Context) {
 		c.Header("Content-Type", "application/vnd.custom+json")
 		render.JSON(c, http.StatusOK, map[string]int{"a": 1})
 	})
@@ -148,7 +148,7 @@ func TestHandlerContentTypeWins(t *testing.T) {
 // ---------------------------------------------------------------- redirect
 
 func TestRedirect(t *testing.T) {
-	rec := serve(func(c *gomicro.Context) {
+	rec := serve(func(c *zarp.Context) {
 		if err := render.Redirect(c, http.StatusFound, "/elsewhere"); err != nil {
 			t.Errorf("render: %v", err)
 		}
@@ -163,7 +163,7 @@ func TestRedirect(t *testing.T) {
 
 func TestRedirectRejectsNonRedirectStatus(t *testing.T) {
 	var err error
-	serve(func(c *gomicro.Context) {
+	serve(func(c *zarp.Context) {
 		err = render.Redirect(c, http.StatusOK, "/elsewhere")
 	})
 	if err == nil {
@@ -194,7 +194,7 @@ func TestHTML(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	rec := serve(func(c *gomicro.Context) {
+	rec := serve(func(c *zarp.Context) {
 		data := map[string]string{"Title": "hello", "Body": "world"}
 		if err := views.HTML(c, http.StatusOK, "index.html", data); err != nil {
 			t.Errorf("render: %v", err)
@@ -215,7 +215,7 @@ func TestHTMLEscapes(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	rec := serve(func(c *gomicro.Context) {
+	rec := serve(func(c *zarp.Context) {
 		data := map[string]string{"Title": "x", "Body": `<script>alert(1)</script>`}
 		views.HTML(c, http.StatusOK, "index.html", data)
 	})
@@ -232,7 +232,7 @@ func TestHTMLFailedTemplateWritesNothing(t *testing.T) {
 	}
 
 	var renderErr error
-	rec := serve(func(c *gomicro.Context) {
+	rec := serve(func(c *zarp.Context) {
 		// A struct with no such field is an execution error; nil data is not.
 		renderErr = views.HTML(c, http.StatusOK, "bad.html", struct{}{})
 	})
@@ -252,7 +252,7 @@ func TestNewTemplatesAndAccessor(t *testing.T) {
 	if views.Template() != tpl {
 		t.Error("Template() should return the wrapped set")
 	}
-	rec := serve(func(c *gomicro.Context) { views.HTML(c, http.StatusOK, "t", "there") })
+	rec := serve(func(c *zarp.Context) { views.HTML(c, http.StatusOK, "t", "there") })
 	if got := rec.Body.String(); got != "hi there" {
 		t.Errorf("body = %q", got)
 	}
@@ -260,7 +260,7 @@ func TestNewTemplatesAndAccessor(t *testing.T) {
 
 func TestHTMLWithoutTemplates(t *testing.T) {
 	var err error
-	serve(func(c *gomicro.Context) {
+	serve(func(c *zarp.Context) {
 		err = render.With(c, http.StatusOK, render.HTMLRender{Name: "x"})
 	})
 	if err == nil || !strings.Contains(err.Error(), "no templates") {
@@ -284,7 +284,7 @@ func (c custom) Render(w http.ResponseWriter) error {
 }
 
 func TestWithCustomRenderer(t *testing.T) {
-	rec := serve(func(c *gomicro.Context) {
+	rec := serve(func(c *zarp.Context) {
 		if err := render.With(c, http.StatusOK, custom{lines: []string{"a,b", "1,2"}}); err != nil {
 			t.Errorf("render: %v", err)
 		}
@@ -304,8 +304,8 @@ func TestWithCustomRenderer(t *testing.T) {
 // charges over the core's direct writer.
 func BenchmarkRenderJSON(b *testing.B) {
 	obj := payload{Name: "octocat", Age: 7}
-	e := gomicro.New()
-	e.GET("/r", func(c *gomicro.Context) { render.JSON(c, http.StatusOK, obj) })
+	e := zarp.New()
+	e.GET("/r", func(c *zarp.Context) { render.JSON(c, http.StatusOK, obj) })
 	req := httptest.NewRequest("GET", "/r", nil)
 	rec := httptest.NewRecorder()
 	b.ReportAllocs()
@@ -317,8 +317,8 @@ func BenchmarkRenderJSON(b *testing.B) {
 
 func BenchmarkContextJSON(b *testing.B) {
 	obj := payload{Name: "octocat", Age: 7}
-	e := gomicro.New()
-	e.GET("/r", func(c *gomicro.Context) { c.JSON(http.StatusOK, obj) })
+	e := zarp.New()
+	e.GET("/r", func(c *zarp.Context) { c.JSON(http.StatusOK, obj) })
 	req := httptest.NewRequest("GET", "/r", nil)
 	rec := httptest.NewRecorder()
 	b.ReportAllocs()

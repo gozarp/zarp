@@ -16,7 +16,7 @@ type source func(key string) ([]string, bool)
 // mapSource fills a struct from a source, matching fields by tag.
 //
 // Reflection is fine here: this package is an optional import and never runs
-// in the core request path. It stays out of gomicro itself for exactly that
+// in the core request path. It stays out of zarp itself for exactly that
 // reason.
 func mapSource(obj any, tag string, get source) error {
 	v := reflect.ValueOf(obj)

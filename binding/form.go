@@ -1,6 +1,6 @@
 package binding
 
-import "github.com/subhanjanops/gomicro"
+import "github.com/gozarp/zarp"
 
 // queryBinding reads the URL query string. It goes through the Context's own
 // accessors so the query is parsed once per request, not once per binder.
@@ -8,7 +8,7 @@ type queryBinding struct{}
 
 func (queryBinding) Name() string { return "query" }
 
-func (queryBinding) Bind(c *gomicro.Context, obj any) error {
+func (queryBinding) Bind(c *zarp.Context, obj any) error {
 	return mapSource(obj, "form", c.GetQueryArray)
 }
 
@@ -17,7 +17,7 @@ type formBinding struct{}
 
 func (formBinding) Name() string { return "form" }
 
-func (formBinding) Bind(c *gomicro.Context, obj any) error {
+func (formBinding) Bind(c *zarp.Context, obj any) error {
 	return mapSource(obj, "form", c.GetPostFormArray)
 }
 
@@ -28,7 +28,7 @@ type multipartBinding struct{}
 
 func (multipartBinding) Name() string { return "multipart" }
 
-func (multipartBinding) Bind(c *gomicro.Context, obj any) error {
+func (multipartBinding) Bind(c *zarp.Context, obj any) error {
 	if _, err := c.MultipartForm(); err != nil {
 		return err
 	}

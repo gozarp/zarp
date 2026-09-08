@@ -1,4 +1,4 @@
-package gomicro
+package zarp
 
 import (
 	"net/http"
@@ -6,9 +6,9 @@ import (
 )
 
 // The route set is the shape of a real API: a static core plus params and one
-// catch-all. Each benchmark pairs a gomicro lookup with the equivalent
+// catch-all. Each benchmark pairs a zarp lookup with the equivalent
 // net/http.ServeMux match, so the overhead claim is measured, not asserted.
-var benchRoutes = []struct{ gomicro, mux string }{
+var benchRoutes = []struct{ zarp, mux string }{
 	{"/", "/{$}"},
 	{"/events", "/events"},
 	{"/notifications", "/notifications"},
@@ -26,7 +26,7 @@ var benchRoutes = []struct{ gomicro, mux string }{
 func benchRouter() *router {
 	r := &router{}
 	for _, rt := range benchRoutes {
-		r.addRoute(http.MethodGet, rt.gomicro, []HandlerFunc{func(*Context) {}})
+		r.addRoute(http.MethodGet, rt.zarp, []HandlerFunc{func(*Context) {}})
 	}
 	return r
 }

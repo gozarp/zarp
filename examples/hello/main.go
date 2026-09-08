@@ -1,4 +1,4 @@
-// Command hello is the smallest gomicro server there is.
+// Command hello is the smallest zarp server there is.
 //
 //	go run ./examples/hello
 //	curl localhost:8080/ping
@@ -8,17 +8,17 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/subhanjanops/gomicro"
+	"github.com/gozarp/zarp"
 )
 
 func main() {
-	r := gomicro.New()
+	r := zarp.New()
 
-	r.GET("/ping", func(c *gomicro.Context) {
+	r.GET("/ping", func(c *zarp.Context) {
 		c.Text(http.StatusOK, "pong")
 	})
 
-	r.GET("/json", func(c *gomicro.Context) {
+	r.GET("/json", func(c *zarp.Context) {
 		c.JSON(http.StatusOK, map[string]string{"message": "pong"})
 	})
 

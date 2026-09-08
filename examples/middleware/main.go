@@ -14,12 +14,12 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/subhanjanops/gomicro"
-	"github.com/subhanjanops/gomicro/middleware"
+	"github.com/gozarp/zarp"
+	"github.com/gozarp/zarp/middleware"
 )
 
 func main() {
-	r := gomicro.New()
+	r := zarp.New()
 
 	// The logger writes plain text to stderr by default. Any logger plugs in
 	// through Sink — here, the standard library's.
@@ -31,7 +31,7 @@ func main() {
 		middleware.RequestID(),
 	)
 
-	r.GET("/public", func(c *gomicro.Context) {
+	r.GET("/public", func(c *zarp.Context) {
 		c.JSON(http.StatusOK, map[string]string{
 			"message":   "no auth needed",
 			"requestID": middleware.GetRequestID(c),
@@ -40,12 +40,12 @@ func main() {
 
 	// A group's middleware runs only for routes registered through it.
 	admin := r.Group("/admin", requireToken("letmein"))
-	admin.GET("/secret", func(c *gomicro.Context) {
+	admin.GET("/secret", func(c *zarp.Context) {
 		c.JSON(http.StatusOK, map[string]string{"message": "the secret"})
 	})
 
 	// Recovery turns this into a 500 and keeps the server up.
-	r.GET("/boom", func(c *gomicro.Context) {
+	r.GET("/boom", func(c *zarp.Context) {
 		panic("something went wrong")
 	})
 
@@ -57,10 +57,10 @@ func main() {
 
 // requireToken is an ordinary handler. What makes it middleware is Next; what
 // makes it a guard is Abort, which stops every later handler in the chain.
-func requireToken(token string) gomicro.HandlerFunc {
+func requireToken(token string) zarp.HandlerFunc {
 	want := "Bearer " + token
 
-	return func(c *gomicro.Context) {
+	return func(c *zarp.Context) {
 		if c.GetHeader("Authorization") != want {
 			c.AbortWithStatusJSON(http.StatusUnauthorized,
 				map[string]string{"error": "unauthorized"})

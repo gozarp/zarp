@@ -8,16 +8,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/subhanjanops/gomicro"
-	"github.com/subhanjanops/gomicro/binding"
+	"github.com/gozarp/zarp"
+	"github.com/gozarp/zarp/binding"
 )
 
 // bindQuery runs a query-string bind against target and returns the error.
 func bindQuery(t *testing.T, query string, target any) error {
 	t.Helper()
 	var err error
-	e := gomicro.New()
-	e.GET("/x", func(c *gomicro.Context) { err = binding.Query(c, target) })
+	e := zarp.New()
+	e.GET("/x", func(c *zarp.Context) { err = binding.Query(c, target) })
 	e.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/x?"+query, nil))
 	return err
 }
@@ -202,8 +202,8 @@ func TestJSONUseNumber(t *testing.T) {
 		N any `json:"n"`
 	}
 	var err error
-	e := gomicro.New()
-	e.POST("/x", func(c *gomicro.Context) { err = binding.JSON(c, &got) })
+	e := zarp.New()
+	e.POST("/x", func(c *zarp.Context) { err = binding.JSON(c, &got) })
 
 	req := httptest.NewRequest("POST", "/x", strings.NewReader(`{"n":10000000000000000001}`))
 	req.Header.Set("Content-Type", binding.MIMEJSON)
@@ -219,7 +219,7 @@ func TestJSONUseNumber(t *testing.T) {
 }
 
 func TestJSONNilBody(t *testing.T) {
-	c := &gomicro.Context{}
+	c := &zarp.Context{}
 	var target struct{}
 	if err := binding.JSONBinding.Bind(c, &target); !errors.Is(err, binding.ErrEmptyBody) {
 		t.Errorf("err = %v, want ErrEmptyBody for a nil request", err)
@@ -228,8 +228,8 @@ func TestJSONNilBody(t *testing.T) {
 
 func TestMultipartOnNonMultipartBody(t *testing.T) {
 	var err error
-	e := gomicro.New()
-	e.POST("/x", func(c *gomicro.Context) {
+	e := zarp.New()
+	e.POST("/x", func(c *zarp.Context) {
 		var target struct{}
 		err = binding.Multipart(c, &target)
 	})
@@ -335,7 +335,7 @@ func TestFieldErrorMessage(t *testing.T) {
 // ---------------------------------------------------------------- header/uri
 
 func TestHeaderBindingWithoutRequest(t *testing.T) {
-	c := &gomicro.Context{}
+	c := &zarp.Context{}
 	var target struct {
 		X string `header:"X-Thing"`
 	}
@@ -353,8 +353,8 @@ func TestURIBindingSkipsAbsentParams(t *testing.T) {
 		Missing string `uri:"missing"`
 	}
 	var err error
-	e := gomicro.New()
-	e.GET("/u/:id", func(c *gomicro.Context) { err = binding.URI(c, &got) })
+	e := zarp.New()
+	e.GET("/u/:id", func(c *zarp.Context) { err = binding.URI(c, &got) })
 	e.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/u/7", nil))
 
 	if err != nil {

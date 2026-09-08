@@ -3,7 +3,7 @@ package binding
 import (
 	"net/http"
 
-	"github.com/subhanjanops/gomicro"
+	"github.com/gozarp/zarp"
 )
 
 // headerBinding reads request headers using `header` tags. Lookups are
@@ -12,7 +12,7 @@ type headerBinding struct{}
 
 func (headerBinding) Name() string { return "header" }
 
-func (headerBinding) Bind(c *gomicro.Context, obj any) error {
+func (headerBinding) Bind(c *zarp.Context, obj any) error {
 	return mapSource(obj, "header", func(key string) ([]string, bool) {
 		if c.Request == nil {
 			return nil, false

@@ -1,14 +1,14 @@
-<h1 align="center">⚡ gomicro</h1>
+<h1 align="center">⚡ zarp</h1>
 
 <p align="center">
   <em>A lightweight REST framework for Go — expressive routing and middleware at stdlib-level overhead.</em>
 </p>
 
 <p align="center">
-  <a href="https://github.com/subhanjanOps/gomicro/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/subhanjanOps/gomicro/actions/workflows/ci.yml/badge.svg"></a>
-  <a href="https://pkg.go.dev/github.com/subhanjanops/gomicro"><img alt="Go Reference" src="https://pkg.go.dev/badge/github.com/subhanjanops/gomicro.svg"></a>
-  <a href="https://goreportcard.com/report/github.com/subhanjanops/gomicro"><img alt="Go Report Card" src="https://goreportcard.com/badge/github.com/subhanjanops/gomicro"></a>
-  <a href="go.mod"><img alt="Go version" src="https://img.shields.io/github/go-mod/go-version/subhanjanOps/gomicro"></a>
+  <a href="https://github.com/gozarp/zarp/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/gozarp/zarp/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://pkg.go.dev/github.com/gozarp/zarp"><img alt="Go Reference" src="https://pkg.go.dev/badge/github.com/gozarp/zarp.svg"></a>
+  <a href="https://goreportcard.com/report/github.com/gozarp/zarp"><img alt="Go Report Card" src="https://goreportcard.com/badge/github.com/gozarp/zarp"></a>
+  <a href="go.mod"><img alt="Go version" src="https://img.shields.io/github/go-mod/go-version/gozarp/zarp"></a>
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-green.svg"></a>
   <br>
   <img alt="Dependencies: zero" src="https://img.shields.io/badge/dependencies-zero-blue">
@@ -20,8 +20,8 @@
 the request path.
 
 ```go
-r := gomicro.New()
-r.GET("/users/:id", func(c *gomicro.Context) {
+r := zarp.New()
+r.GET("/users/:id", func(c *zarp.Context) {
     c.JSON(200, User{ID: c.Param("id")})
 })
 r.Run(":8080")
@@ -37,7 +37,7 @@ r.Run(":8080")
 ## 📦 Installation
 
 ```sh
-go get github.com/subhanjanops/gomicro
+go get github.com/gozarp/zarp
 ```
 
 Requires Go 1.25 or later.
@@ -49,24 +49,24 @@ Requires Go 1.25 or later.
 ```go
 package main
 
-import "github.com/subhanjanops/gomicro"
+import "github.com/gozarp/zarp"
 
 func main() {
-    r := gomicro.New()
+    r := zarp.New()
 
-    r.GET("/ping", func(c *gomicro.Context) {
+    r.GET("/ping", func(c *zarp.Context) {
         c.JSON(200, map[string]string{"message": "pong"})
     })
 
     api := r.Group("/api/v1", authMiddleware)
-    api.GET("/users/:id", func(c *gomicro.Context) {
+    api.GET("/users/:id", func(c *zarp.Context) {
         c.JSON(200, User{ID: c.Param("id")})
     })
 
     r.Run(":8080") // or build your own http.Server — Engine is an http.Handler
 }
 
-func authMiddleware(c *gomicro.Context) {
+func authMiddleware(c *zarp.Context) {
     if c.GetHeader("Authorization") == "" {
         c.AbortWithStatusJSON(401, map[string]string{"error": "unauthorized"})
         return
@@ -91,7 +91,7 @@ Ergonomics are usually paid for on every request: a `map[string]string` of route
 closure allocated per middleware, a reflection call to render JSON. Each cost is small on its
 own; together they are what separates a routing layer's throughput from the standard library's.
 
-gomicro treats the following as constraints, not preferences:
+zarp treats the following as constraints, not preferences:
 
 | Constraint | Rejected alternative | Rationale |
 |---|---|---|
@@ -114,7 +114,7 @@ The checked-in baseline is [benchmarks/BASELINE.md](benchmarks/BASELINE.md);
 
 **End to end** — a whole request through `ServeHTTP`: pool, route, chain, handler, response.
 
-| | gomicro | `net/http.ServeMux` |
+| | zarp | `net/http.ServeMux` |
 |---|---|---|
 | static route | **52.4 ns**, 0 allocs | 94.4 ns, 1 alloc |
 | param route | **59.9 ns**, 0 allocs | 186.7 ns, 2 allocs |
@@ -125,7 +125,7 @@ The checked-in baseline is [benchmarks/BASELINE.md](benchmarks/BASELINE.md);
 
 **Route resolution alone**, over a 12-route API-shaped set:
 
-| | gomicro | `net/http.ServeMux` | |
+| | zarp | `net/http.ServeMux` | |
 |---|---|---|---|
 | static | **15.8 ns**, 0 allocs | 139.3 ns, 0 allocs | 8.8× |
 | 1 param | **18.7 ns**, 0 allocs | 163.3 ns, 1 alloc | 8.7× |
@@ -135,10 +135,10 @@ The checked-in baseline is [benchmarks/BASELINE.md](benchmarks/BASELINE.md);
 
 **Read the second table fairly.** `ServeMux.Handler()` does more than match a tree — it cleans
 the path, matches hosts, and stores wildcards in the request context, which is where most of its
-allocations come from. gomicro's tree walk resolves the route into a caller-supplied params
+allocations come from. zarp's tree walk resolves the route into a caller-supplied params
 buffer and leaves the rest to `Engine`. Read it as *route resolution is allocation-free and
 roughly an order of magnitude cheaper*, not as a claim about whole requests. The end-to-end table
-is the one to judge gomicro by.
+is the one to judge zarp by.
 
 Middleware costs **~2.8 ns per hop** and allocates nothing (51.9 ns with none, 78.4 ns with ten).
 The pooled context resets in **3.9 ns**. The one core path that allocates is 405 responses, which
@@ -154,7 +154,7 @@ go test -bench='Router|ServeMux|Context' -benchmem -run XXX .    # micro-benchma
 
 ## 🧩 Features
 
-**Core** (`gomicro`, stdlib only)
+**Core** (`zarp`, stdlib only)
 
 - Radix-tree router with `:param` and `*catchall` wildcards, priority ordering and trailing-slash
   redirects
@@ -262,7 +262,7 @@ every level of the stack at once. Cost per layer: one integer increment. The
 ## 🗂️ Repository layout
 
 ```
-gomicro/
+zarp/
 ├── doc.go                     package documentation
 ├── router.go                  radix tree: node, addRoute, Lookup
 ├── context.go                 Context, pooling, params, response helpers

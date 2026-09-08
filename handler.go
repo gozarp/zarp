@@ -1,4 +1,4 @@
-package gomicro
+package zarp
 
 // HandlerFunc is the request handler signature. Middleware and route handlers
 // are the same type: what makes one middleware is that it calls Next.

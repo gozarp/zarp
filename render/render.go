@@ -1,6 +1,6 @@
 // Package render writes typed responses: JSON, XML, HTML, plain text.
 //
-// It is an optional import. gomicro's core carries its own Context.JSON,
+// It is an optional import. zarp's core carries its own Context.JSON,
 // Context.Text and Context.Data, which write directly and allocate nothing per
 // request; this package is the extensible path, where a response goes through
 // an interface so an application can add its own formats.
@@ -10,7 +10,7 @@
 // through Render — but a framework with only a hardcoded set of formats is a
 // dead end, so this exists alongside it.
 //
-// Like binding, entry points are functions taking a *gomicro.Context: core
+// Like binding, entry points are functions taking a *zarp.Context: core
 // cannot import this package, because this package imports core.
 //
 //	render.XML(c, http.StatusOK, report)
@@ -20,7 +20,7 @@ package render
 import (
 	"net/http"
 
-	"github.com/subhanjanops/gomicro"
+	"github.com/gozarp/zarp"
 )
 
 // Render writes one response body.
@@ -36,7 +36,7 @@ type Render interface {
 }
 
 // With writes r with the given status code.
-func With(c *gomicro.Context, code int, r Render) error {
+func With(c *zarp.Context, code int, r Render) error {
 	c.Status(code)
 	r.WriteContentType(c.Writer)
 	return r.Render(c.Writer)

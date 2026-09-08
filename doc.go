@@ -1,18 +1,18 @@
-// Package gomicro is a lightweight HTTP framework: expressive routing and
+// Package zarp is a lightweight HTTP framework: expressive routing and
 // middleware with stdlib-level overhead, built on the standard library alone.
 //
 // # Getting started
 //
 // An Engine is an http.Handler, which is the real integration point:
 //
-//	r := gomicro.New()
+//	r := zarp.New()
 //
-//	r.GET("/ping", func(c *gomicro.Context) {
+//	r.GET("/ping", func(c *zarp.Context) {
 //		c.JSON(http.StatusOK, map[string]string{"message": "pong"})
 //	})
 //
 //	api := r.Group("/api/v1", authMiddleware)
-//	api.GET("/users/:id", func(c *gomicro.Context) {
+//	api.GET("/users/:id", func(c *zarp.Context) {
 //		c.JSON(http.StatusOK, User{ID: c.Param("id")})
 //	})
 //
@@ -36,7 +36,7 @@
 // that it calls Context.Next, running the rest of the chain and resuming
 // afterwards:
 //
-//	func Timer(c *gomicro.Context) {
+//	func Timer(c *zarp.Context) {
 //		start := time.Now()
 //		c.Next()
 //		log.Printf("%s took %s", c.FullPath(), time.Since(start))
@@ -73,4 +73,4 @@
 // from the framework's own subpackages. Request binding, validation, alternate
 // renderers and the stock middleware live in their own packages, so a program
 // that does not use them does not pay for them.
-package gomicro
+package zarp

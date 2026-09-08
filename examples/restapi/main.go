@@ -15,9 +15,9 @@ import (
 	"net/http"
 	"sync"
 
-	"github.com/subhanjanops/gomicro"
-	"github.com/subhanjanops/gomicro/binding"
-	"github.com/subhanjanops/gomicro/middleware"
+	"github.com/gozarp/zarp"
+	"github.com/gozarp/zarp/binding"
+	"github.com/gozarp/zarp/middleware"
 )
 
 // User is what the store holds and what the API returns.
@@ -45,7 +45,7 @@ type listQuery struct {
 func main() {
 	store := newStore()
 
-	r := gomicro.New()
+	r := zarp.New()
 	r.Use(middleware.Default()...)
 
 	api := r.Group("/api/v1")
@@ -62,7 +62,7 @@ func main() {
 
 // ---------------------------------------------------------------- handlers
 
-func (s *store) list(c *gomicro.Context) {
+func (s *store) list(c *zarp.Context) {
 	var q listQuery
 	if err := binding.Query(c, &q); err != nil {
 		badRequest(c, err)
@@ -86,7 +86,7 @@ func (s *store) list(c *gomicro.Context) {
 	c.JSON(http.StatusOK, users)
 }
 
-func (s *store) create(c *gomicro.Context) {
+func (s *store) create(c *zarp.Context) {
 	var in createUser
 	// binding.JSON decodes and validates; a failure names every bad field.
 	if err := binding.JSON(c, &in); err != nil {
@@ -99,7 +99,7 @@ func (s *store) create(c *gomicro.Context) {
 	c.JSON(http.StatusCreated, user)
 }
 
-func (s *store) get(c *gomicro.Context) {
+func (s *store) get(c *zarp.Context) {
 	// URI binding turns route parameters into a struct, with the same rules.
 	var params struct {
 		ID int `uri:"id" binding:"required,min=1"`
@@ -117,7 +117,7 @@ func (s *store) get(c *gomicro.Context) {
 	c.JSON(http.StatusOK, user)
 }
 
-func (s *store) remove(c *gomicro.Context) {
+func (s *store) remove(c *zarp.Context) {
 	var params struct {
 		ID int `uri:"id" binding:"required,min=1"`
 	}
@@ -133,7 +133,7 @@ func (s *store) remove(c *gomicro.Context) {
 	c.Status(http.StatusNoContent)
 }
 
-func badRequest(c *gomicro.Context, err error) {
+func badRequest(c *zarp.Context, err error) {
 	c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 }
 

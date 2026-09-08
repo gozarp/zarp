@@ -10,16 +10,16 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/subhanjanops/gomicro"
-	"github.com/subhanjanops/gomicro/middleware"
+	"github.com/gozarp/zarp"
+	"github.com/gozarp/zarp/middleware"
 )
 
 // engineWithSink serves one request through a Logger using sink.
 func engineWithSink(t *testing.T, sink middleware.Sink, status int, target string) {
 	t.Helper()
-	e := gomicro.New()
+	e := zarp.New()
 	e.Use(middleware.LoggerWith(sink))
-	e.GET("/user/:id", func(c *gomicro.Context) { c.Text(status, "body") })
+	e.GET("/user/:id", func(c *zarp.Context) { c.Text(status, "body") })
 	e.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", target, nil))
 }
 
@@ -105,9 +105,9 @@ func TestSinkFuncSatisfiesSink(t *testing.T) {
 // ---------------------------------------------------------------- benchmarks
 
 func benchSink(b *testing.B, sink middleware.Sink) {
-	e := gomicro.New()
+	e := zarp.New()
 	e.Use(middleware.LoggerWith(sink))
-	e.GET("/user/:id", func(c *gomicro.Context) { c.Text(http.StatusOK, "ok") })
+	e.GET("/user/:id", func(c *zarp.Context) { c.Text(http.StatusOK, "ok") })
 	benchServe(b, e, "GET", "/user/42")
 }
 
@@ -121,9 +121,9 @@ func BenchmarkSinkSlog(b *testing.B) {
 
 func TestDefaultSinkIsDependencyFree(t *testing.T) {
 	// A zero LoggerConfig must work without any logging library configured.
-	e := gomicro.New()
+	e := zarp.New()
 	e.Use(middleware.LoggerWithConfig(middleware.LoggerConfig{}))
-	e.GET("/user/:id", func(c *gomicro.Context) { c.Text(http.StatusOK, "ok") })
+	e.GET("/user/:id", func(c *zarp.Context) { c.Text(http.StatusOK, "ok") })
 
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, httptest.NewRequest("GET", "/user/42", nil))

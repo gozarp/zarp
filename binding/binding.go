@@ -1,11 +1,11 @@
 // Package binding parses HTTP requests into Go structs.
 //
-// It is an optional import: gomicro's core never depends on it, so a program
+// It is an optional import: zarp's core never depends on it, so a program
 // that decodes its own bodies pays nothing for this package — in particular
 // nothing for the reflection the form binders use.
 //
 // That dependency direction is why the entry points are functions taking a
-// *gomicro.Context rather than methods on it. Core cannot import binding,
+// *zarp.Context rather than methods on it. Core cannot import binding,
 // because binding imports core:
 //
 //	var req CreateUser
@@ -22,7 +22,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/subhanjanops/gomicro"
+	"github.com/gozarp/zarp"
 )
 
 // Binding parses a request into obj, which must be a non-nil pointer.
@@ -31,7 +31,7 @@ type Binding interface {
 	Name() string
 
 	// Bind parses the request into obj.
-	Bind(c *gomicro.Context, obj any) error
+	Bind(c *zarp.Context, obj any) error
 }
 
 // The available bindings. Bind and the shorthand functions below cover the
@@ -79,12 +79,12 @@ func Default(method, contentType string) Binding {
 
 // Bind parses the request into obj using the binding implied by its method and
 // Content-Type, then validates obj.
-func Bind(c *gomicro.Context, obj any) error {
+func Bind(c *zarp.Context, obj any) error {
 	return With(c, obj, Default(c.Request.Method, c.ContentType()))
 }
 
 // With parses the request into obj using b, then validates obj.
-func With(c *gomicro.Context, obj any, b Binding) error {
+func With(c *zarp.Context, obj any, b Binding) error {
 	if err := b.Bind(c, obj); err != nil {
 		return err
 	}
@@ -92,20 +92,20 @@ func With(c *gomicro.Context, obj any, b Binding) error {
 }
 
 // JSON parses a JSON body into obj.
-func JSON(c *gomicro.Context, obj any) error { return With(c, obj, JSONBinding) }
+func JSON(c *zarp.Context, obj any) error { return With(c, obj, JSONBinding) }
 
 // Query parses the URL query string into obj, using `form` tags.
-func Query(c *gomicro.Context, obj any) error { return With(c, obj, QueryBinding) }
+func Query(c *zarp.Context, obj any) error { return With(c, obj, QueryBinding) }
 
 // Form parses a urlencoded body into obj, using `form` tags.
-func Form(c *gomicro.Context, obj any) error { return With(c, obj, FormBinding) }
+func Form(c *zarp.Context, obj any) error { return With(c, obj, FormBinding) }
 
 // Multipart parses a multipart body's values into obj, using `form` tags.
 // Uploaded files are read with Context.FormFile rather than bound.
-func Multipart(c *gomicro.Context, obj any) error { return With(c, obj, MultipartBinding) }
+func Multipart(c *zarp.Context, obj any) error { return With(c, obj, MultipartBinding) }
 
 // URI parses the matched route parameters into obj, using `uri` tags.
-func URI(c *gomicro.Context, obj any) error { return With(c, obj, URIBinding) }
+func URI(c *zarp.Context, obj any) error { return With(c, obj, URIBinding) }
 
 // Header parses request headers into obj, using `header` tags.
-func Header(c *gomicro.Context, obj any) error { return With(c, obj, HeaderBinding) }
+func Header(c *zarp.Context, obj any) error { return With(c, obj, HeaderBinding) }

@@ -4,7 +4,7 @@ import (
 	"encoding/xml"
 	"net/http"
 
-	"github.com/subhanjanops/gomicro"
+	"github.com/gozarp/zarp"
 )
 
 // XMLRender writes obj as XML.
@@ -21,6 +21,6 @@ func (r XMLRender) Render(w http.ResponseWriter) error {
 }
 
 // XML writes obj as XML with the given status code.
-func XML(c *gomicro.Context, code int, obj any) error {
+func XML(c *zarp.Context, code int, obj any) error {
 	return With(c, code, XMLRender{Data: obj})
 }

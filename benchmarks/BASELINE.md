@@ -27,7 +27,7 @@ A whole request through `ServeHTTP`: pool, route, chain, handler, response. Meas
 that implements `io.StringWriter`, as `net/http`'s own response does — without that, `io.WriteString`
 falls back to a `[]byte` conversion and the benchmark charges an allocation production never pays.
 
-| | gomicro | `net/http.ServeMux` |
+| | zarp | `net/http.ServeMux` |
 |---|---|---|
 | static route | **52.4 ns**, 0 allocs | 94.4 ns, 1 alloc |
 | param route | **59.9 ns**, 0 allocs | 186.7 ns, 2 allocs |
@@ -67,7 +67,7 @@ a tree — path cleaning, host matching, storing wildcards in the request contex
 its allocations come from — so read this as *resolution is allocation-free and about an order of
 magnitude cheaper*, not as a claim about whole requests. The table above is the honest one.
 
-| | gomicro | `ServeMux` |
+| | zarp | `ServeMux` |
 |---|---|---|
 | static | **15.8 ns**, 0 allocs | 139.3 ns, 0 allocs |
 | 1 param | **18.7 ns**, 0 allocs | 163.3 ns, 1 alloc |
@@ -88,7 +88,7 @@ magnitude cheaper*, not as a claim about whole requests. The table above is the 
 | `String` (`"%s"`, v) | 58.1 | 0 |
 | `JSON` (small struct) | 292.2 | 1 |
 
-The one `JSON` allocation is the caller boxing a struct into `any`, not gomicro.
+The one `JSON` allocation is the caller boxing a struct into `any`, not zarp.
 
 ## Optional packages
 

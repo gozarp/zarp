@@ -18,20 +18,20 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/subhanjanops/gomicro"
-	"github.com/subhanjanops/gomicro/middleware"
+	"github.com/gozarp/zarp"
+	"github.com/gozarp/zarp/middleware"
 )
 
 func main() {
-	r := gomicro.New()
+	r := zarp.New()
 	r.Use(middleware.Default()...)
 
-	r.GET("/ping", func(c *gomicro.Context) {
+	r.GET("/ping", func(c *zarp.Context) {
 		c.Text(http.StatusOK, "pong")
 	})
 
 	// A request that outlives the shutdown signal, to show it is waited for.
-	r.GET("/slow", func(c *gomicro.Context) {
+	r.GET("/slow", func(c *zarp.Context) {
 		select {
 		case <-time.After(5 * time.Second):
 			c.Text(http.StatusOK, "finished")

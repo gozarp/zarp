@@ -104,14 +104,14 @@ jobs:
           # A package is stdlib when its first path segment has no dot. The
           # standard library also vendors a few golang.org/x packages under
           # vendor/, which are stdlib internals, not dependencies.
-          deps=$(go list -deps .             | grep -v '^github.com/subhanjanops/gomicro'             | grep -v '^vendor/'             | grep '^[^/]*\.' || true)
+          deps=$(go list -deps .             | grep -v '^github.com/gozarp/zarp'             | grep -v '^vendor/'             | grep '^[^/]*\.' || true)
           if [ -n "$deps" ]; then
             echo "core has non-stdlib dependencies:"; echo "$deps"; exit 1
           fi
 
       - name: Core imports none of the optional packages
         run: |
-          bad=$(go list -deps . | grep -E 'gomicro/(binding|render|middleware)' || true)
+          bad=$(go list -deps . | grep -E 'zarp/(binding|render|middleware)' || true)
           if [ -n "$bad" ]; then
             echo "core imports an optional package:"; echo "$bad"; exit 1
           fi

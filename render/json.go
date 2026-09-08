@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/subhanjanops/gomicro"
+	"github.com/gozarp/zarp"
 )
 
 const jsonContentType = "application/json; charset=utf-8"
@@ -61,11 +61,11 @@ func (r IndentedJSONRender) Render(w http.ResponseWriter) error {
 // Context.JSON does the same thing without the interface hop and is what a
 // handler should normally use; this exists so JSON composes with the other
 // renderers.
-func JSON(c *gomicro.Context, code int, obj any) error {
+func JSON(c *zarp.Context, code int, obj any) error {
 	return With(c, code, JSONRender{Data: obj})
 }
 
 // IndentedJSON writes obj as indented JSON with the given status code.
-func IndentedJSON(c *gomicro.Context, code int, obj any) error {
+func IndentedJSON(c *zarp.Context, code int, obj any) error {
 	return With(c, code, IndentedJSONRender{Data: obj})
 }

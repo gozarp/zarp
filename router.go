@@ -1,4 +1,4 @@
-package gomicro
+package zarp
 
 // Param is one URL parameter matched by a route: the ":id" in "/users/:id",
 // paired with the value from the request.
@@ -70,15 +70,15 @@ func (n *node) insertChild(path, fullPath string, handlers []HandlerFunc) {
 			break
 		}
 		if !valid {
-			panic("gomicro: only one wildcard per path segment is allowed, has: '" +
+			panic("zarp: only one wildcard per path segment is allowed, has: '" +
 				wildcard + "' in path '" + fullPath + "'")
 		}
 		if len(wildcard) < 2 {
-			panic("gomicro: wildcards must be named with a non-empty name in path '" +
+			panic("zarp: wildcards must be named with a non-empty name in path '" +
 				fullPath + "'")
 		}
 		if len(n.children) > 0 {
-			panic("gomicro: wildcard segment '" + wildcard +
+			panic("zarp: wildcard segment '" + wildcard +
 				"' conflicts with existing children in path '" + fullPath + "'")
 		}
 
@@ -110,11 +110,11 @@ func (n *node) insertChild(path, fullPath string, handlers []HandlerFunc) {
 
 		// A catch-all must end the path and be preceded by '/'.
 		if i+len(wildcard) != len(path) {
-			panic("gomicro: catch-all routes are only allowed at the end of the path in path '" +
+			panic("zarp: catch-all routes are only allowed at the end of the path in path '" +
 				fullPath + "'")
 		}
 		if i == 0 || path[i-1] != '/' {
-			panic("gomicro: no / before catch-all in path '" + fullPath + "'")
+			panic("zarp: no / before catch-all in path '" + fullPath + "'")
 		}
 
 		// Three nodes: the static prefix ending *before* the '/', an empty
@@ -246,13 +246,13 @@ func countParams(path string) uint16 {
 func (r *router) addRoute(method, path string, handlers []HandlerFunc) {
 	switch {
 	case method == "":
-		panic("gomicro: method must not be empty")
+		panic("zarp: method must not be empty")
 	case path == "" || path[0] != '/':
-		panic("gomicro: path must begin with '/' in path '" + path + "'")
+		panic("zarp: path must begin with '/' in path '" + path + "'")
 	case len(handlers) == 0:
-		panic("gomicro: there must be at least one handler for path '" + path + "'")
+		panic("zarp: there must be at least one handler for path '" + path + "'")
 	case len(handlers) >= int(abortIndex):
-		panic("gomicro: too many handlers for path '" + path + "'")
+		panic("zarp: too many handlers for path '" + path + "'")
 	}
 
 	// Sized once here so Engine can allocate a Context's Params buffer exactly.
@@ -354,7 +354,7 @@ walk:
 					continue walk
 				}
 
-				panic("gomicro: '" + path + "' in new path '" + fullPath +
+				panic("zarp: '" + path + "' in new path '" + fullPath +
 					"' conflicts with existing wildcard '" + n.path +
 					"' in existing prefix '" + n.fullPath + "'")
 			}
@@ -365,7 +365,7 @@ walk:
 
 		// Exact match: this node owns the route.
 		if n.handlers != nil {
-			panic("gomicro: handlers are already registered for path '" + fullPath + "'")
+			panic("zarp: handlers are already registered for path '" + fullPath + "'")
 		}
 		n.handlers = handlers
 		n.fullPath = fullPath
@@ -461,7 +461,7 @@ walk:
 					return n.handlers, n.fullPath, false
 
 				default:
-					panic("gomicro: invalid node type")
+					panic("zarp: invalid node type")
 				}
 			}
 		} else if path == prefix {

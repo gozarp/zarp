@@ -4,7 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 
-	"github.com/subhanjanops/gomicro"
+	"github.com/gozarp/zarp"
 )
 
 // RequestIDHeader is the header read and written by RequestID.
@@ -30,12 +30,12 @@ type RequestIDConfig struct {
 
 // RequestID returns middleware that gives every request an id, stores it on the
 // Context and echoes it in the response.
-func RequestID() gomicro.HandlerFunc {
+func RequestID() zarp.HandlerFunc {
 	return RequestIDWithConfig(RequestIDConfig{})
 }
 
 // RequestIDWithConfig returns a configured RequestID.
-func RequestIDWithConfig(cfg RequestIDConfig) gomicro.HandlerFunc {
+func RequestIDWithConfig(cfg RequestIDConfig) zarp.HandlerFunc {
 	header := cfg.Header
 	if header == "" {
 		header = RequestIDHeader
@@ -49,7 +49,7 @@ func RequestIDWithConfig(cfg RequestIDConfig) gomicro.HandlerFunc {
 		trustInbound = *cfg.TrustInbound
 	}
 
-	return func(c *gomicro.Context) {
+	return func(c *zarp.Context) {
 		id := ""
 		if trustInbound {
 			id = c.GetHeader(header)
@@ -68,7 +68,7 @@ func RequestIDWithConfig(cfg RequestIDConfig) gomicro.HandlerFunc {
 }
 
 // GetRequestID returns the id RequestID stored, or "".
-func GetRequestID(c *gomicro.Context) string {
+func GetRequestID(c *zarp.Context) string {
 	return c.GetString(RequestIDKey)
 }
 

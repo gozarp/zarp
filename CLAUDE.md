@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-# gomicro
+# zarp
 
 A lightweight Go REST framework. Gin-style ergonomics, stdlib-level performance overhead.
 
@@ -10,7 +10,7 @@ A lightweight Go REST framework. Gin-style ergonomics, stdlib-level performance 
 
 The module is scaffolding: `context.go` holds a stub `Context` embedding `context.Context`, `engine.go` is package declaration only, and `binding/`, `render/`, `middleware/`, `internal/`, `examples/`, `benchmarks/` are empty directories. Nothing under "Core API shape" is implemented yet. Follow the build order below — `router.go` does not exist and is step 1.
 
-Module path is `github.com/subhanjanops/gomicro`, Go 1.25.0. No third-party dependencies; keep it stdlib-only in the core package.
+Module path is `github.com/gozarp/zarp`, Go 1.25.0. No third-party dependencies; keep it stdlib-only in the core package.
 
 ## Commands
 
@@ -46,7 +46,7 @@ Every PR or generated change should be checked against this list before merging.
 ## Folder structure
 
 ```
-gomicro/
+zarp/
 ├── context.go        # Context struct, sync.Pool, Next(), param access
 ├── engine.go          # Engine struct, ServeHTTP, method registration (GET/POST/...)
 ├── group.go           # RouterGroup, prefix + middleware nesting
@@ -97,6 +97,6 @@ Don't jump ahead of this order unless explicitly asked to.
 
 ## Style notes
 
-- Root package (`gomicro`) stays flat — no subpackage for core files, mirrors Gin/chi.
+- Root package (`zarp`) stays flat — no subpackage for core files, mirrors Gin/chi.
 - `internal/` blocks external imports of unsafe/perf-hack helpers — don't move things out of `internal/` without a clear reason.
 - Prefer explicit allocation-free code over "clever" abstractions in `context.go` and `router.go` specifically. Elsewhere, normal Go idioms are fine.

@@ -11,14 +11,14 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/subhanjanops/gomicro"
+	"github.com/gozarp/zarp"
 )
 
 func main() {
-	r := gomicro.New()
+	r := zarp.New()
 
 	// ":name" matches one segment.
-	r.GET("/users/:id/posts/:postID", func(c *gomicro.Context) {
+	r.GET("/users/:id/posts/:postID", func(c *zarp.Context) {
 		c.JSON(http.StatusOK, map[string]string{
 			"user": c.Param("id"),
 			"post": c.Param("postID"),
@@ -29,11 +29,11 @@ func main() {
 
 	// "*name" matches the rest of the path, leading slash included, and must
 	// be the last segment of the route.
-	r.GET("/files/*filepath", func(c *gomicro.Context) {
+	r.GET("/files/*filepath", func(c *zarp.Context) {
 		c.JSON(http.StatusOK, map[string]string{"path": c.Param("filepath")})
 	})
 
-	r.GET("/search", func(c *gomicro.Context) {
+	r.GET("/search", func(c *zarp.Context) {
 		c.JSON(http.StatusOK, map[string]any{
 			"q":     c.Query("q"),
 			"page":  c.DefaultQuery("page", "1"),

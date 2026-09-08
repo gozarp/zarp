@@ -6,7 +6,7 @@ import (
 	"html/template"
 	"net/http"
 
-	"github.com/subhanjanops/gomicro"
+	"github.com/gozarp/zarp"
 )
 
 // HTMLRender executes one template from a set.
@@ -53,7 +53,7 @@ func (r HTMLRender) Render(w http.ResponseWriter) error {
 //
 //	views, err := render.LoadGlob("views/*.html")
 //	...
-//	r.GET("/", func(c *gomicro.Context) {
+//	r.GET("/", func(c *zarp.Context) {
 //		views.HTML(c, http.StatusOK, "index.html", data)
 //	})
 type Templates struct {
@@ -87,6 +87,6 @@ func LoadFiles(files ...string) (*Templates, error) {
 func (t *Templates) Template() *template.Template { return t.tpl }
 
 // HTML executes the named template and writes it with the given status code.
-func (t *Templates) HTML(c *gomicro.Context, code int, name string, data any) error {
+func (t *Templates) HTML(c *zarp.Context, code int, name string, data any) error {
 	return With(c, code, HTMLRender{Template: t.tpl, Name: name, Data: data})
 }

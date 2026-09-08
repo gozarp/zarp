@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/subhanjanops/gomicro"
+	"github.com/gozarp/zarp"
 )
 
 // RedirectRender sends an HTTP redirect. It needs the request because
@@ -29,7 +29,7 @@ func (r RedirectRender) Render(w http.ResponseWriter) error {
 }
 
 // Redirect sends an HTTP redirect to location.
-func Redirect(c *gomicro.Context, code int, location string) error {
+func Redirect(c *zarp.Context, code int, location string) error {
 	// The status travels inside http.Redirect, so this renderer is written
 	// directly rather than through With, which would set it twice.
 	r := RedirectRender{Code: code, Request: c.Request, Location: location}

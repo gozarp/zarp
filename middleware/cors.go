@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/subhanjanops/gomicro"
+	"github.com/gozarp/zarp"
 )
 
 // CORSConfig configures CORS.
@@ -40,7 +40,7 @@ type CORSConfig struct {
 // credentials would let any site on the internet make authenticated requests as
 // your users, which is why the browsers reject it and why this package refuses
 // to configure it.
-func CORS() gomicro.HandlerFunc {
+func CORS() zarp.HandlerFunc {
 	return CORSWithConfig(CORSConfig{AllowOrigins: []string{"*"}})
 }
 
@@ -48,7 +48,7 @@ func CORS() gomicro.HandlerFunc {
 //
 // Every header value is built here, at construction, rather than joined per
 // request — a request only picks strings that already exist.
-func CORSWithConfig(cfg CORSConfig) gomicro.HandlerFunc {
+func CORSWithConfig(cfg CORSConfig) zarp.HandlerFunc {
 	allowAll := false
 	origins := make([]string, 0, len(cfg.AllowOrigins))
 	for _, o := range cfg.AllowOrigins {
@@ -60,7 +60,7 @@ func CORSWithConfig(cfg CORSConfig) gomicro.HandlerFunc {
 	}
 
 	if allowAll && cfg.AllowCredentials {
-		panic("gomicro: CORS cannot allow all origins with credentials — " +
+		panic("zarp: CORS cannot allow all origins with credentials — " +
 			"list the origins you trust instead")
 	}
 
@@ -98,7 +98,7 @@ func CORSWithConfig(cfg CORSConfig) gomicro.HandlerFunc {
 		return cfg.AllowOriginFunc != nil && cfg.AllowOriginFunc(origin)
 	}
 
-	return func(c *gomicro.Context) {
+	return func(c *zarp.Context) {
 		origin := c.GetHeader("Origin")
 		if origin == "" {
 			// Not a cross-origin request; nothing to negotiate.
@@ -151,7 +151,7 @@ func CORSWithConfig(cfg CORSConfig) gomicro.HandlerFunc {
 	}
 }
 
-func isPreflight(c *gomicro.Context) bool {
+func isPreflight(c *zarp.Context) bool {
 	return c.Request.Method == http.MethodOptions &&
 		c.GetHeader("Access-Control-Request-Method") != ""
 }

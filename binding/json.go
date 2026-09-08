@@ -7,7 +7,7 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/subhanjanops/gomicro"
+	"github.com/gozarp/zarp"
 )
 
 // MaxBodyBytes caps how much of a request body the JSON binder will read. An
@@ -32,7 +32,7 @@ type jsonBinding struct{}
 
 func (jsonBinding) Name() string { return "json" }
 
-func (jsonBinding) Bind(c *gomicro.Context, obj any) error {
+func (jsonBinding) Bind(c *zarp.Context, obj any) error {
 	if c.Request == nil || c.Request.Body == nil {
 		return ErrEmptyBody
 	}

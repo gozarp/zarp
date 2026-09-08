@@ -13,11 +13,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/subhanjanops/gomicro"
-	"github.com/subhanjanops/gomicro/middleware"
+	"github.com/gozarp/zarp"
+	"github.com/gozarp/zarp/middleware"
 )
 
-func serve(e *gomicro.Engine, method, target string) *httptest.ResponseRecorder {
+func serve(e *zarp.Engine, method, target string) *httptest.ResponseRecorder {
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, httptest.NewRequest(method, target, nil))
 	return rec
@@ -27,9 +27,9 @@ func serve(e *gomicro.Engine, method, target string) *httptest.ResponseRecorder 
 
 func TestRecoveryTurnsPanicInto500(t *testing.T) {
 	var log bytes.Buffer
-	e := gomicro.New()
+	e := zarp.New()
 	e.Use(middleware.RecoveryWithWriter(&log))
-	e.GET("/boom", func(c *gomicro.Context) { panic("handler exploded") })
+	e.GET("/boom", func(c *zarp.Context) { panic("handler exploded") })
 
 	rec := serve(e, "GET", "/boom")
 
@@ -46,12 +46,12 @@ func TestRecoveryTurnsPanicInto500(t *testing.T) {
 
 func TestRecoveryStopsTheChain(t *testing.T) {
 	var ran []string
-	e := gomicro.New()
+	e := zarp.New()
 	e.Use(middleware.RecoveryWithWriter(nil))
 	e.GET("/boom",
-		func(c *gomicro.Context) { ran = append(ran, "first"); c.Next() },
-		func(c *gomicro.Context) { panic("x") },
-		func(c *gomicro.Context) { ran = append(ran, "after-panic") },
+		func(c *zarp.Context) { ran = append(ran, "first"); c.Next() },
+		func(c *zarp.Context) { panic("x") },
+		func(c *zarp.Context) { ran = append(ran, "after-panic") },
 	)
 
 	serve(e, "GET", "/boom")
@@ -64,10 +64,10 @@ func TestRecoveryStopsTheChain(t *testing.T) {
 func TestRecoveryKeepsServerUsable(t *testing.T) {
 	// A recovered panic unwinds inside Next, so the Context still returns to
 	// the pool and later requests are unaffected.
-	e := gomicro.New()
+	e := zarp.New()
 	e.Use(middleware.RecoveryWithWriter(nil))
-	e.GET("/boom", func(c *gomicro.Context) { panic("x") })
-	e.GET("/ok/:id", func(c *gomicro.Context) { c.Text(http.StatusOK, c.Param("id")) })
+	e.GET("/boom", func(c *zarp.Context) { panic("x") })
+	e.GET("/ok/:id", func(c *zarp.Context) { c.Text(http.StatusOK, c.Param("id")) })
 
 	for range 5 {
 		serve(e, "GET", "/boom")
@@ -78,9 +78,9 @@ func TestRecoveryKeepsServerUsable(t *testing.T) {
 }
 
 func TestRecoveryRepanicsErrAbortHandler(t *testing.T) {
-	e := gomicro.New()
+	e := zarp.New()
 	e.Use(middleware.RecoveryWithWriter(nil))
-	e.GET("/abort", func(c *gomicro.Context) { panic(http.ErrAbortHandler) })
+	e.GET("/abort", func(c *zarp.Context) { panic(http.ErrAbortHandler) })
 
 	defer func() {
 		r := recover()
@@ -97,9 +97,9 @@ func TestRecoveryRepanicsErrAbortHandler(t *testing.T) {
 
 func TestRecoveryIgnoresBrokenPipe(t *testing.T) {
 	var log bytes.Buffer
-	e := gomicro.New()
+	e := zarp.New()
 	e.Use(middleware.RecoveryWithWriter(&log))
-	e.GET("/gone", func(c *gomicro.Context) {
+	e.GET("/gone", func(c *zarp.Context) {
 		panic(&net.OpError{
 			Op:  "write",
 			Net: "tcp",
@@ -118,12 +118,12 @@ func TestRecoveryIgnoresBrokenPipe(t *testing.T) {
 }
 
 func TestRecoveryWithHandler(t *testing.T) {
-	e := gomicro.New()
-	e.Use(middleware.RecoveryWithHandler(func(c *gomicro.Context, err any) {
+	e := zarp.New()
+	e.Use(middleware.RecoveryWithHandler(func(c *zarp.Context, err any) {
 		c.AbortWithStatusJSON(http.StatusServiceUnavailable,
 			map[string]string{"error": "try later"})
 	}))
-	e.GET("/boom", func(c *gomicro.Context) { panic("x") })
+	e.GET("/boom", func(c *zarp.Context) { panic("x") })
 
 	rec := serve(e, "GET", "/boom")
 
@@ -136,9 +136,9 @@ func TestRecoveryWithHandler(t *testing.T) {
 }
 
 func TestRecoveryPassesThroughNormalRequests(t *testing.T) {
-	e := gomicro.New()
+	e := zarp.New()
 	e.Use(middleware.RecoveryWithWriter(nil))
-	e.GET("/ok", func(c *gomicro.Context) { c.Text(http.StatusOK, "fine") })
+	e.GET("/ok", func(c *zarp.Context) { c.Text(http.StatusOK, "fine") })
 
 	rec := serve(e, "GET", "/ok")
 	if rec.Code != http.StatusOK || rec.Body.String() != "fine" {
@@ -150,9 +150,9 @@ func TestRecoveryPassesThroughNormalRequests(t *testing.T) {
 
 func TestLoggerWritesRequestDetails(t *testing.T) {
 	var log bytes.Buffer
-	e := gomicro.New()
+	e := zarp.New()
 	e.Use(middleware.LoggerWithWriter(&log))
-	e.GET("/user/:id", func(c *gomicro.Context) { c.Text(http.StatusCreated, "hi") })
+	e.GET("/user/:id", func(c *zarp.Context) { c.Text(http.StatusCreated, "hi") })
 
 	serve(e, "GET", "/user/42")
 
@@ -173,13 +173,13 @@ func TestLoggerWritesRequestDetails(t *testing.T) {
 func TestLoggerLogsAfterTheChain(t *testing.T) {
 	// The status is only known once everything downstream has run.
 	var log bytes.Buffer
-	e := gomicro.New()
+	e := zarp.New()
 	e.Use(middleware.LoggerWithWriter(&log))
-	e.Use(func(c *gomicro.Context) {
+	e.Use(func(c *zarp.Context) {
 		c.Next()
 		c.Status(http.StatusTeapot) // changed after the handler
 	})
-	e.GET("/x", func(c *gomicro.Context) { c.Status(http.StatusOK) })
+	e.GET("/x", func(c *zarp.Context) { c.Status(http.StatusOK) })
 
 	serve(e, "GET", "/x")
 
@@ -190,13 +190,13 @@ func TestLoggerLogsAfterTheChain(t *testing.T) {
 
 func TestLoggerSkipPaths(t *testing.T) {
 	var log bytes.Buffer
-	e := gomicro.New()
+	e := zarp.New()
 	e.Use(middleware.LoggerWithConfig(middleware.LoggerConfig{
 		Sink:      middleware.TextSink(&log),
 		SkipPaths: []string{"/healthz"},
 	}))
-	e.GET("/healthz", func(c *gomicro.Context) { c.Text(http.StatusOK, "ok") })
-	e.GET("/real", func(c *gomicro.Context) { c.Text(http.StatusOK, "ok") })
+	e.GET("/healthz", func(c *zarp.Context) { c.Text(http.StatusOK, "ok") })
+	e.GET("/real", func(c *zarp.Context) { c.Text(http.StatusOK, "ok") })
 
 	if rec := serve(e, "GET", "/healthz"); rec.Body.String() != "ok" {
 		t.Errorf("skipped path must still be served, got %q", rec.Body)
@@ -213,11 +213,11 @@ func TestLoggerSkipPaths(t *testing.T) {
 
 func TestLoggerCustomSink(t *testing.T) {
 	var log bytes.Buffer
-	e := gomicro.New()
+	e := zarp.New()
 	e.Use(middleware.LoggerWith(middleware.SinkFunc(func(e middleware.Entry) {
 		fmt.Fprintf(&log, "%s %s %s\n", e.Method, e.Path, e.URL)
 	})))
-	e.GET("/user/:id", func(c *gomicro.Context) {})
+	e.GET("/user/:id", func(c *zarp.Context) {})
 
 	serve(e, "GET", "/user/42?q=go")
 
@@ -228,9 +228,9 @@ func TestLoggerCustomSink(t *testing.T) {
 
 func TestLoggerEntryFields(t *testing.T) {
 	var got middleware.Entry
-	e := gomicro.New()
+	e := zarp.New()
 	e.Use(middleware.LoggerWith(middleware.SinkFunc(func(e middleware.Entry) { got = e })))
-	e.GET("/user/:id", func(c *gomicro.Context) { c.Text(http.StatusOK, "hello") })
+	e.GET("/user/:id", func(c *zarp.Context) { c.Text(http.StatusOK, "hello") })
 
 	serve(e, "GET", "/user/42?q=go")
 
@@ -255,9 +255,9 @@ func TestLoggerEntryFields(t *testing.T) {
 
 func TestLoggerLogsMisses(t *testing.T) {
 	var log bytes.Buffer
-	e := gomicro.New()
+	e := zarp.New()
 	e.Use(middleware.LoggerWithWriter(&log))
-	e.GET("/known", func(c *gomicro.Context) {})
+	e.GET("/known", func(c *zarp.Context) {})
 
 	serve(e, "GET", "/unknown")
 
@@ -277,9 +277,9 @@ func TestDefaultBundlesLoggerThenRecovery(t *testing.T) {
 
 	// Order matters: the logger has to wrap recovery to record the 500.
 	var log bytes.Buffer
-	e := gomicro.New()
+	e := zarp.New()
 	e.Use(middleware.LoggerWithWriter(&log), middleware.RecoveryWithWriter(nil))
-	e.GET("/boom", func(c *gomicro.Context) { panic("x") })
+	e.GET("/boom", func(c *zarp.Context) { panic("x") })
 
 	rec := serve(e, "GET", "/boom")
 
@@ -294,22 +294,22 @@ func TestDefaultBundlesLoggerThenRecovery(t *testing.T) {
 // ---------------------------------------------------------------- benchmarks
 
 func BenchmarkLogger(b *testing.B) {
-	e := gomicro.New()
+	e := zarp.New()
 	e.Use(middleware.LoggerWithWriter(io.Discard))
-	e.GET("/user/:id", func(c *gomicro.Context) { c.Text(http.StatusOK, "ok") })
+	e.GET("/user/:id", func(c *zarp.Context) { c.Text(http.StatusOK, "ok") })
 	benchServe(b, e, "GET", "/user/42")
 }
 
 func BenchmarkRecovery(b *testing.B) {
-	e := gomicro.New()
+	e := zarp.New()
 	e.Use(middleware.RecoveryWithWriter(nil))
-	e.GET("/user/:id", func(c *gomicro.Context) { c.Text(http.StatusOK, "ok") })
+	e.GET("/user/:id", func(c *zarp.Context) { c.Text(http.StatusOK, "ok") })
 	benchServe(b, e, "GET", "/user/42")
 }
 
 func BenchmarkNoMiddleware(b *testing.B) {
-	e := gomicro.New()
-	e.GET("/user/:id", func(c *gomicro.Context) { c.Text(http.StatusOK, "ok") })
+	e := zarp.New()
+	e.GET("/user/:id", func(c *zarp.Context) { c.Text(http.StatusOK, "ok") })
 	benchServe(b, e, "GET", "/user/42")
 }
 
@@ -339,9 +339,9 @@ func benchServe(b *testing.B, h http.Handler, method, target string) {
 
 func TestRequestIDGenerates(t *testing.T) {
 	var seen string
-	e := gomicro.New()
+	e := zarp.New()
 	e.Use(middleware.RequestID())
-	e.GET("/x", func(c *gomicro.Context) { seen = middleware.GetRequestID(c) })
+	e.GET("/x", func(c *zarp.Context) { seen = middleware.GetRequestID(c) })
 
 	rec := serve(e, "GET", "/x")
 
@@ -354,9 +354,9 @@ func TestRequestIDGenerates(t *testing.T) {
 }
 
 func TestRequestIDIsUniquePerRequest(t *testing.T) {
-	e := gomicro.New()
+	e := zarp.New()
 	e.Use(middleware.RequestID())
-	e.GET("/x", func(c *gomicro.Context) {})
+	e.GET("/x", func(c *zarp.Context) {})
 
 	seen := make(map[string]bool, 100)
 	for range 100 {
@@ -370,9 +370,9 @@ func TestRequestIDIsUniquePerRequest(t *testing.T) {
 
 func TestRequestIDReusesInbound(t *testing.T) {
 	var seen string
-	e := gomicro.New()
+	e := zarp.New()
 	e.Use(middleware.RequestID())
-	e.GET("/x", func(c *gomicro.Context) { seen = middleware.GetRequestID(c) })
+	e.GET("/x", func(c *zarp.Context) { seen = middleware.GetRequestID(c) })
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest("GET", "/x", nil)
@@ -393,9 +393,9 @@ func TestRequestIDRejectsJunkInbound(t *testing.T) {
 	for name, bad := range cases {
 		t.Run(name, func(t *testing.T) {
 			var seen string
-			e := gomicro.New()
+			e := zarp.New()
 			e.Use(middleware.RequestID())
-			e.GET("/x", func(c *gomicro.Context) { seen = middleware.GetRequestID(c) })
+			e.GET("/x", func(c *zarp.Context) { seen = middleware.GetRequestID(c) })
 
 			rec := httptest.NewRecorder()
 			req := httptest.NewRequest("GET", "/x", nil)
@@ -415,9 +415,9 @@ func TestRequestIDRejectsJunkInbound(t *testing.T) {
 func TestRequestIDUntrustedInbound(t *testing.T) {
 	no := false
 	var seen string
-	e := gomicro.New()
+	e := zarp.New()
 	e.Use(middleware.RequestIDWithConfig(middleware.RequestIDConfig{TrustInbound: &no}))
-	e.GET("/x", func(c *gomicro.Context) { seen = middleware.GetRequestID(c) })
+	e.GET("/x", func(c *zarp.Context) { seen = middleware.GetRequestID(c) })
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest("GET", "/x", nil)
@@ -430,12 +430,12 @@ func TestRequestIDUntrustedInbound(t *testing.T) {
 }
 
 func TestRequestIDCustomHeaderAndGenerator(t *testing.T) {
-	e := gomicro.New()
+	e := zarp.New()
 	e.Use(middleware.RequestIDWithConfig(middleware.RequestIDConfig{
 		Header:    "X-Trace",
 		Generator: func() string { return "fixed" },
 	}))
-	e.GET("/x", func(c *gomicro.Context) {})
+	e.GET("/x", func(c *zarp.Context) {})
 
 	rec := serve(e, "GET", "/x")
 	if got := rec.Header().Get("X-Trace"); got != "fixed" {
@@ -445,7 +445,7 @@ func TestRequestIDCustomHeaderAndGenerator(t *testing.T) {
 
 // ---------------------------------------------------------------- CORS
 
-func corsRequest(e *gomicro.Engine, method, origin, preflightFor string) *httptest.ResponseRecorder {
+func corsRequest(e *zarp.Engine, method, origin, preflightFor string) *httptest.ResponseRecorder {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(method, "/x", nil)
 	if origin != "" {
@@ -458,18 +458,18 @@ func corsRequest(e *gomicro.Engine, method, origin, preflightFor string) *httpte
 	return rec
 }
 
-func corsEngine(cfg middleware.CORSConfig) *gomicro.Engine {
-	e := gomicro.New()
+func corsEngine(cfg middleware.CORSConfig) *zarp.Engine {
+	e := zarp.New()
 	e.Use(middleware.CORSWithConfig(cfg))
-	e.GET("/x", func(c *gomicro.Context) { c.Text(http.StatusOK, "ok") })
-	e.OPTIONS("/x", func(c *gomicro.Context) { c.Text(http.StatusOK, "route-options") })
+	e.GET("/x", func(c *zarp.Context) { c.Text(http.StatusOK, "ok") })
+	e.OPTIONS("/x", func(c *zarp.Context) { c.Text(http.StatusOK, "route-options") })
 	return e
 }
 
 func TestCORSAllowsAnyOriginByDefault(t *testing.T) {
-	e := gomicro.New()
+	e := zarp.New()
 	e.Use(middleware.CORS())
-	e.GET("/x", func(c *gomicro.Context) { c.Text(http.StatusOK, "ok") })
+	e.GET("/x", func(c *zarp.Context) { c.Text(http.StatusOK, "ok") })
 
 	rec := corsRequest(e, "GET", "https://example.com", "")
 
@@ -598,11 +598,11 @@ func TestCORSWildcardWithCredentialsPanics(t *testing.T) {
 }
 
 func BenchmarkCORS(b *testing.B) {
-	e := gomicro.New()
+	e := zarp.New()
 	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
 		AllowOrigins: []string{"https://ok.example"},
 	}))
-	e.GET("/user/:id", func(c *gomicro.Context) { c.Text(http.StatusOK, "ok") })
+	e.GET("/user/:id", func(c *zarp.Context) { c.Text(http.StatusOK, "ok") })
 
 	req := httptest.NewRequest("GET", "/user/42", nil)
 	req.Header.Set("Origin", "https://ok.example")
@@ -615,8 +615,8 @@ func BenchmarkCORS(b *testing.B) {
 }
 
 func BenchmarkRequestID(b *testing.B) {
-	e := gomicro.New()
+	e := zarp.New()
 	e.Use(middleware.RequestID())
-	e.GET("/user/:id", func(c *gomicro.Context) { c.Text(http.StatusOK, "ok") })
+	e.GET("/user/:id", func(c *zarp.Context) { c.Text(http.StatusOK, "ok") })
 	benchServe(b, e, "GET", "/user/42")
 }

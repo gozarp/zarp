@@ -1,4 +1,4 @@
-package gomicro
+package zarp
 
 import (
 	"net/http"
@@ -22,7 +22,7 @@ func (g *RouterGroup) Static(relativePath, root string) *RouterGroup {
 // http.FS, say — at relativePath.
 func (g *RouterGroup) StaticFS(relativePath string, fs http.FileSystem) *RouterGroup {
 	if strings.ContainsAny(relativePath, ":*") {
-		panic("gomicro: wildcards are not allowed in a static path: '" + relativePath + "'")
+		panic("zarp: wildcards are not allowed in a static path: '" + relativePath + "'")
 	}
 
 	handler := g.staticHandler(relativePath, fs)
@@ -40,7 +40,7 @@ func (g *RouterGroup) StaticFS(relativePath string, fs http.FileSystem) *RouterG
 //	r.StaticFile("/favicon.ico", "./public/favicon.ico")
 func (g *RouterGroup) StaticFile(relativePath, filepath string) *RouterGroup {
 	if strings.ContainsAny(relativePath, ":*") {
-		panic("gomicro: wildcards are not allowed in a static path: '" + relativePath + "'")
+		panic("zarp: wildcards are not allowed in a static path: '" + relativePath + "'")
 	}
 
 	handler := func(c *Context) {

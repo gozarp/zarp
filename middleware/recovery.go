@@ -1,10 +1,10 @@
-// Package middleware holds gomicro's stock middleware.
+// Package middleware holds zarp's stock middleware.
 //
-// It is an optional import — core never depends on it, which is why gomicro has
+// It is an optional import — core never depends on it, which is why zarp has
 // no Default() constructor bundling a logger and recovery. Wire what you want
 // yourself:
 //
-//	r := gomicro.New()
+//	r := zarp.New()
 //	r.Use(middleware.Default()...) // Logger + Recovery
 package middleware
 
@@ -19,27 +19,27 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/subhanjanops/gomicro"
+	"github.com/gozarp/zarp"
 )
 
 // Default returns the middleware most services want: a logger and recovery, in
 // that order, so the logger records the 500 that recovery produces.
-func Default() []gomicro.HandlerFunc {
-	return []gomicro.HandlerFunc{Logger(), Recovery()}
+func Default() []zarp.HandlerFunc {
+	return []zarp.HandlerFunc{Logger(), Recovery()}
 }
 
 // Recovery returns middleware that turns a panic in a later handler into a 500,
 // logging the stack to stderr, so one bad request does not take the process
 // down with it.
-func Recovery() gomicro.HandlerFunc {
+func Recovery() zarp.HandlerFunc {
 	return RecoveryWithWriter(os.Stderr)
 }
 
 // RecoveryWithWriter is Recovery logging to out.
-func RecoveryWithWriter(out io.Writer) gomicro.HandlerFunc {
-	return RecoveryWithHandler(func(c *gomicro.Context, err any) {
+func RecoveryWithWriter(out io.Writer) zarp.HandlerFunc {
+	return RecoveryWithHandler(func(c *zarp.Context, err any) {
 		if out != nil {
-			fmt.Fprintf(out, "[gomicro] panic recovered: %s %s\n%v\n%s\n",
+			fmt.Fprintf(out, "[zarp] panic recovered: %s %s\n%v\n%s\n",
 				c.Request.Method, c.Request.URL.Path, err, debug.Stack())
 		}
 		c.AbortWithStatus(http.StatusInternalServerError)
@@ -49,8 +49,8 @@ func RecoveryWithWriter(out io.Writer) gomicro.HandlerFunc {
 // RecoveryWithHandler is Recovery with your own response to a panic. handle is
 // called with the recovered value and should end the request — the chain is not
 // resumed either way.
-func RecoveryWithHandler(handle func(c *gomicro.Context, err any)) gomicro.HandlerFunc {
-	return func(c *gomicro.Context) {
+func RecoveryWithHandler(handle func(c *zarp.Context, err any)) zarp.HandlerFunc {
+	return func(c *zarp.Context) {
 		// One deferred call per request is the price of not crashing.
 		defer func() {
 			err := recover()
