@@ -1,0 +1,19 @@
+package binding
+
+import "github.com/subhanjanops/gomicro"
+
+// uriBinding reads the route parameters matched by the router — the ":id" in
+// "/users/:id" — using `uri` tags.
+type uriBinding struct{}
+
+func (uriBinding) Name() string { return "uri" }
+
+func (uriBinding) Bind(c *gomicro.Context, obj any) error {
+	return mapSource(obj, "uri", func(key string) ([]string, bool) {
+		v, ok := c.Params.Get(key)
+		if !ok {
+			return nil, false
+		}
+		return []string{v}, true
+	})
+}
