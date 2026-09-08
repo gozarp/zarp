@@ -222,7 +222,7 @@ func writeText(out io.Writer, e Entry) {
 	b = append(b, e.Path...)
 	b = append(b, '\n')
 
-	out.Write(b)
+	_, _ = out.Write(b)
 
 	*bufPtr = b
 	lineBuffers.Put(bufPtr)

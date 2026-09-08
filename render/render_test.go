@@ -19,7 +19,7 @@ func serve(h zarp.HandlerFunc) *httptest.ResponseRecorder {
 	e := zarp.New()
 	e.GET("/r", h)
 	rec := httptest.NewRecorder()
-	e.ServeHTTP(rec, httptest.NewRequest("GET", "/r", nil))
+	e.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/r", nil))
 	return rec
 }
 
@@ -306,7 +306,7 @@ func BenchmarkRenderJSON(b *testing.B) {
 	obj := payload{Name: "octocat", Age: 7}
 	e := zarp.New()
 	e.GET("/r", func(c *zarp.Context) { render.JSON(c, http.StatusOK, obj) })
-	req := httptest.NewRequest("GET", "/r", nil)
+	req := httptest.NewRequest(http.MethodGet, "/r", nil)
 	rec := httptest.NewRecorder()
 	b.ReportAllocs()
 	for b.Loop() {
@@ -319,7 +319,7 @@ func BenchmarkContextJSON(b *testing.B) {
 	obj := payload{Name: "octocat", Age: 7}
 	e := zarp.New()
 	e.GET("/r", func(c *zarp.Context) { c.JSON(http.StatusOK, obj) })
-	req := httptest.NewRequest("GET", "/r", nil)
+	req := httptest.NewRequest(http.MethodGet, "/r", nil)
 	rec := httptest.NewRecorder()
 	b.ReportAllocs()
 	for b.Loop() {

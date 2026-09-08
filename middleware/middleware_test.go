@@ -375,7 +375,7 @@ func TestRequestIDReusesInbound(t *testing.T) {
 	e.GET("/x", func(c *zarp.Context) { seen = middleware.GetRequestID(c) })
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest("GET", "/x", nil)
+	req := httptest.NewRequest(http.MethodGet, "/x", nil)
 	req.Header.Set(middleware.RequestIDHeader, "upstream-trace-123")
 	e.ServeHTTP(rec, req)
 
@@ -398,7 +398,7 @@ func TestRequestIDRejectsJunkInbound(t *testing.T) {
 			e.GET("/x", func(c *zarp.Context) { seen = middleware.GetRequestID(c) })
 
 			rec := httptest.NewRecorder()
-			req := httptest.NewRequest("GET", "/x", nil)
+			req := httptest.NewRequest(http.MethodGet, "/x", nil)
 			req.Header[middleware.RequestIDHeader] = []string{bad}
 			e.ServeHTTP(rec, req)
 
@@ -420,7 +420,7 @@ func TestRequestIDUntrustedInbound(t *testing.T) {
 	e.GET("/x", func(c *zarp.Context) { seen = middleware.GetRequestID(c) })
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest("GET", "/x", nil)
+	req := httptest.NewRequest(http.MethodGet, "/x", nil)
 	req.Header.Set(middleware.RequestIDHeader, "from-client")
 	e.ServeHTTP(rec, req)
 
@@ -604,7 +604,7 @@ func BenchmarkCORS(b *testing.B) {
 	}))
 	e.GET("/user/:id", func(c *zarp.Context) { c.Text(http.StatusOK, "ok") })
 
-	req := httptest.NewRequest("GET", "/user/42", nil)
+	req := httptest.NewRequest(http.MethodGet, "/user/42", nil)
 	req.Header.Set("Origin", "https://ok.example")
 	w := &nopWriter{}
 	b.ReportAllocs()

@@ -58,7 +58,7 @@ func TestQueryOnNilRequest(t *testing.T) {
 
 func TestFormFileErrors(t *testing.T) {
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest("POST", "/upload", strings.NewReader("not multipart"))
+	req := httptest.NewRequest(http.MethodPost, "/upload", strings.NewReader("not multipart"))
 	req.Header.Set("Content-Type", "text/plain")
 	c := &Context{}
 	c.reset(rec, req)
@@ -71,7 +71,7 @@ func TestFormFileErrors(t *testing.T) {
 func TestFormFileMissingField(t *testing.T) {
 	body, contentType := multipartBody(t)
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest("POST", "/upload", body)
+	req := httptest.NewRequest(http.MethodPost, "/upload", body)
 	req.Header.Set("Content-Type", contentType)
 	c := &Context{}
 	c.reset(rec, req)
@@ -83,7 +83,7 @@ func TestFormFileMissingField(t *testing.T) {
 
 func TestClientIPWithoutAPort(t *testing.T) {
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest("GET", "/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.RemoteAddr = "192.0.2.9" // no port, as some proxies leave it
 	c := &Context{engine: &Engine{}}
 	c.reset(rec, req)
@@ -95,7 +95,7 @@ func TestClientIPWithoutAPort(t *testing.T) {
 
 func TestMultipartFormOnNonMultipartBody(t *testing.T) {
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest("POST", "/", strings.NewReader("a=b"))
+	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader("a=b"))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	c := &Context{}
 	c.reset(rec, req)

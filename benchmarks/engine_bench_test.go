@@ -99,7 +99,7 @@ func BenchmarkEngineRedirect(b *testing.B) {
 
 func BenchmarkEngineParallel(b *testing.B) {
 	e := engine()
-	req := httptest.NewRequest("GET", "/user/42", nil)
+	req := httptest.NewRequest(http.MethodGet, "/user/42", nil)
 	b.ReportAllocs()
 	b.ResetTimer()
 	b.RunParallel(func(pb *testing.PB) {

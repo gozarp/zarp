@@ -63,7 +63,7 @@ func New() *Engine {
 		ForwardedByClientIP:   true,
 		MaxMultipartMemory:    defaultMultipartMemory,
 	}
-	e.RouterGroup.engine = e
+	e.engine = e
 	e.pool.New = func() any { return e.allocateContext() }
 	return e
 }
@@ -173,7 +173,7 @@ func (e *Engine) serveFallback(c *Context, code int, body string) {
 	}
 	if c.Writer.Status() == code {
 		c.writeContentType("text/plain; charset=utf-8")
-		c.writermem.WriteString(body)
+		_, _ = c.writermem.WriteString(body)
 		return
 	}
 	c.Writer.WriteHeaderNow()

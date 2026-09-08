@@ -176,7 +176,7 @@ func BenchmarkStatic(b *testing.B) {
 	e := New()
 	e.Static("/assets", dir)
 
-	req := httptest.NewRequest("GET", "/assets/app.css", nil)
+	req := httptest.NewRequest(http.MethodGet, "/assets/app.css", nil)
 	b.ReportAllocs()
 	for b.Loop() {
 		e.ServeHTTP(httptest.NewRecorder(), req)

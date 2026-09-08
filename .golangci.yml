@@ -1,0 +1,61 @@
+version: "2"
+
+# Lint configuration for zarp. The core packages are performance-sensitive and
+# stdlib-only, so the set below favours correctness and API-hygiene linters over
+# style bikeshedding — a rule that would push the hot path towards an extra
+# allocation does not belong here.
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  default: standard # errcheck, govet, ineffassign, staticcheck, unused
+  enable:
+    - bodyclose
+    - errorlint
+    - gocritic
+    - misspell
+    - revive
+    - unconvert
+    - usestdlibvars
+
+  settings:
+    revive:
+      rules:
+        - name: exported
+          arguments:
+            - disableStutteringCheck
+    staticcheck:
+      checks:
+        - all
+        # QF1011 wants the type dropped from `var _ Sink = TextSink(nil)`, but
+        # the explicit type is the point: it is a compile-time assertion that
+        # the concrete type still satisfies the interface.
+        - -QF1011
+
+  exclusions:
+    presets:
+      - comments
+      - common-false-positives
+      - std-error-handling
+    rules:
+      # Tests exercise error paths deliberately and document themselves.
+      - path: _test\.go
+        linters:
+          - errcheck
+          - revive
+          - gocritic
+      # Context.Value resolution is tested with a plain string key on purpose —
+      # that is exactly the case the lookup order has to handle.
+      - path: _test\.go
+        text: SA1029
+      # Examples are teaching code: short names and ignored errors are the point.
+      - path: ^examples/
+        linters:
+          - errcheck
+          - revive
+
+formatters:
+  enable:
+    - gofmt

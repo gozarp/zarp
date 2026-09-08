@@ -541,7 +541,7 @@ func (c *Context) writeContentType(value string) {
 func (c *Context) Text(code int, s string) {
 	c.Status(code)
 	c.writeContentType("text/plain; charset=utf-8")
-	c.writermem.WriteString(s)
+	_, _ = c.writermem.WriteString(s)
 }
 
 // String writes a formatted plain-text response. With no values it writes
@@ -555,7 +555,7 @@ func (c *Context) String(code int, format string, values ...any) {
 	c.Status(code)
 	c.writeContentType("text/plain; charset=utf-8")
 	if len(values) == 0 {
-		c.writermem.WriteString(format)
+		_, _ = c.writermem.WriteString(format)
 		return
 	}
 	fmt.Fprintf(c.Writer, format, values...)
@@ -565,7 +565,7 @@ func (c *Context) String(code int, format string, values ...any) {
 func (c *Context) Data(code int, contentType string, data []byte) {
 	c.Status(code)
 	c.writeContentType(contentType)
-	c.Writer.Write(data)
+	_, _ = c.Writer.Write(data)
 }
 
 // Redirect sends an HTTP redirect. It panics on a status that is not one.
@@ -617,7 +617,7 @@ func (c *Context) JSON(code int, obj any) {
 	if len(b) > autoContentLengthLimit {
 		c.Writer.Header().Set("Content-Length", strconv.Itoa(len(b)))
 	}
-	c.Writer.Write(b)
+	_, _ = c.Writer.Write(b)
 	releaseBuffer(buf)
 }
 

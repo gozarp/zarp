@@ -16,7 +16,7 @@ import (
 )
 
 // run registers a handler that binds, and returns whatever it recorded.
-func run(t *testing.T, method, target, body, contentType string, bind func(*zarp.Context) error) (error, *httptest.ResponseRecorder) {
+func run(t *testing.T, method, target, body, contentType string, bind func(*zarp.Context) error) (*httptest.ResponseRecorder, error) {
 	t.Helper()
 	var bindErr error
 
@@ -36,7 +36,7 @@ func run(t *testing.T, method, target, body, contentType string, bind func(*zarp
 	}
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, r)
-	return bindErr, rec
+	return rec, bindErr
 }
 
 // ---------------------------------------------------------------- JSON
@@ -50,7 +50,7 @@ type user struct {
 
 func TestJSON(t *testing.T) {
 	var got user
-	err, _ := run(t, "POST", "/u/1", `{"name":"octocat","age":7,"tags":["a","b"],"admin":true}`,
+	_, err := run(t, "POST", "/u/1", `{"name":"octocat","age":7,"tags":["a","b"],"admin":true}`,
 		binding.MIMEJSON, func(c *zarp.Context) error { return binding.JSON(c, &got) })
 
 	if err != nil {
@@ -63,7 +63,7 @@ func TestJSON(t *testing.T) {
 
 func TestJSONEmptyBody(t *testing.T) {
 	var got user
-	err, _ := run(t, "POST", "/u/1", "", binding.MIMEJSON,
+	_, err := run(t, "POST", "/u/1", "", binding.MIMEJSON,
 		func(c *zarp.Context) error { return binding.JSON(c, &got) })
 
 	if !errors.Is(err, binding.ErrEmptyBody) {
@@ -73,7 +73,7 @@ func TestJSONEmptyBody(t *testing.T) {
 
 func TestJSONMalformed(t *testing.T) {
 	var got user
-	err, _ := run(t, "POST", "/u/1", `{"name":`, binding.MIMEJSON,
+	_, err := run(t, "POST", "/u/1", `{"name":`, binding.MIMEJSON,
 		func(c *zarp.Context) error { return binding.JSON(c, &got) })
 
 	if err == nil {
@@ -90,7 +90,7 @@ func TestJSONBodyCap(t *testing.T) {
 	defer func() { binding.MaxBodyBytes = old }()
 
 	var got user
-	err, _ := run(t, "POST", "/u/1", `{"name":"`+strings.Repeat("x", 200)+`"}`, binding.MIMEJSON,
+	_, err := run(t, "POST", "/u/1", `{"name":"`+strings.Repeat("x", 200)+`"}`, binding.MIMEJSON,
 		func(c *zarp.Context) error { return binding.JSON(c, &got) })
 
 	if err == nil || !strings.Contains(err.Error(), "exceeds") {
@@ -103,7 +103,7 @@ func TestJSONDisallowUnknownFields(t *testing.T) {
 	defer func() { binding.EnableDecoderDisallowUnknownFields = false }()
 
 	var got user
-	err, _ := run(t, "POST", "/u/1", `{"name":"x","nope":1}`, binding.MIMEJSON,
+	_, err := run(t, "POST", "/u/1", `{"name":"x","nope":1}`, binding.MIMEJSON,
 		func(c *zarp.Context) error { return binding.JSON(c, &got) })
 
 	if err == nil || !strings.Contains(err.Error(), "nope") {
@@ -129,7 +129,7 @@ type search struct {
 func TestQuery(t *testing.T) {
 	var got search
 	target := "/u/1?q=go&page=2&tag=a&tag=b&ratio=1.5&live=true&timeout=3s&limit=10&ByName=named"
-	err, _ := run(t, "GET", target, "", "",
+	_, err := run(t, "GET", target, "", "",
 		func(c *zarp.Context) error { return binding.Query(c, &got) })
 
 	if err != nil {
@@ -158,7 +158,7 @@ func TestQuery(t *testing.T) {
 
 func TestQuerySkipsDashTag(t *testing.T) {
 	var got search
-	err, _ := run(t, "GET", "/u/1?-=nope&Skipped=nope", "", "",
+	_, err := run(t, "GET", "/u/1?-=nope&Skipped=nope", "", "",
 		func(c *zarp.Context) error { return binding.Query(c, &got) })
 	if err != nil {
 		t.Fatal(err)
@@ -170,7 +170,7 @@ func TestQuerySkipsDashTag(t *testing.T) {
 
 func TestQueryBadValue(t *testing.T) {
 	var got search
-	err, _ := run(t, "GET", "/u/1?page=abc", "", "",
+	_, err := run(t, "GET", "/u/1?page=abc", "", "",
 		func(c *zarp.Context) error { return binding.Query(c, &got) })
 
 	if err == nil || !strings.Contains(err.Error(), "Page") {
@@ -180,7 +180,7 @@ func TestQueryBadValue(t *testing.T) {
 
 func TestForm(t *testing.T) {
 	var got search
-	err, _ := run(t, "POST", "/u/1", "q=go&page=3", binding.MIMEPOSTForm,
+	_, err := run(t, "POST", "/u/1", "q=go&page=3", binding.MIMEPOSTForm,
 		func(c *zarp.Context) error { return binding.Form(c, &got) })
 
 	if err != nil {
@@ -212,7 +212,7 @@ func TestMultipart(t *testing.T) {
 		}
 	})
 
-	r := httptest.NewRequest("POST", "/upload", &body)
+	r := httptest.NewRequest(http.MethodPost, "/upload", &body)
 	r.Header.Set("Content-Type", w.FormDataContentType())
 	e.ServeHTTP(httptest.NewRecorder(), r)
 
@@ -239,7 +239,7 @@ func TestURI(t *testing.T) {
 			t.Errorf("bind: %v", err)
 		}
 	})
-	e.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/u/42/hello", nil))
+	e.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/u/42/hello", nil))
 
 	if got.ID != 42 || got.Slug != "hello" {
 		t.Errorf("got %+v", got)
@@ -259,7 +259,7 @@ func TestHeader(t *testing.T) {
 			t.Errorf("bind: %v", err)
 		}
 	})
-	r := httptest.NewRequest("GET", "/h", nil)
+	r := httptest.NewRequest(http.MethodGet, "/h", nil)
 	r.Header.Set("X-Request-Id", "abc123")
 	r.Header.Set("User-Agent", "test")
 	e.ServeHTTP(httptest.NewRecorder(), r)
@@ -292,7 +292,7 @@ func TestDefault(t *testing.T) {
 
 func TestBindPicksByContentType(t *testing.T) {
 	var got user
-	err, _ := run(t, "POST", "/u/1", `{"name":"via-bind"}`, binding.MIMEJSON,
+	_, err := run(t, "POST", "/u/1", `{"name":"via-bind"}`, binding.MIMEJSON,
 		func(c *zarp.Context) error { return binding.Bind(c, &got) })
 
 	if err != nil || got.Name != "via-bind" {
@@ -302,7 +302,7 @@ func TestBindPicksByContentType(t *testing.T) {
 
 func TestBindRejectsNonPointer(t *testing.T) {
 	var got search
-	err, _ := run(t, "GET", "/u/1?q=x", "", "",
+	_, err := run(t, "GET", "/u/1?q=x", "", "",
 		func(c *zarp.Context) error { return binding.Query(c, got) })
 
 	if err == nil || !strings.Contains(err.Error(), "pointer") {
@@ -327,7 +327,7 @@ func valid() string {
 
 func TestValidateAccepts(t *testing.T) {
 	var got account
-	err, _ := run(t, "GET", "/u/1?"+valid(), "", "",
+	_, err := run(t, "GET", "/u/1?"+valid(), "", "",
 		func(c *zarp.Context) error { return binding.Query(c, &got) })
 	if err != nil {
 		t.Fatalf("valid input rejected: %v", err)
@@ -347,7 +347,7 @@ func TestValidateRules(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			var got account
-			err, _ := run(t, "GET", "/u/1?"+tc.query, "", "",
+			_, err := run(t, "GET", "/u/1?"+tc.query, "", "",
 				func(c *zarp.Context) error { return binding.Query(c, &got) })
 
 			if err == nil {
@@ -362,7 +362,7 @@ func TestValidateRules(t *testing.T) {
 
 func TestValidateReportsEveryFailure(t *testing.T) {
 	var got account
-	err, _ := run(t, "GET", "/u/1?name=o&email=nope&role=root&age=1&code=x", "", "",
+	_, err := run(t, "GET", "/u/1?name=o&email=nope&role=root&age=1&code=x", "", "",
 		func(c *zarp.Context) error { return binding.Query(c, &got) })
 
 	var errs binding.ValidationErrors
@@ -380,7 +380,7 @@ func TestValidateOptionalFieldsSkipRules(t *testing.T) {
 		Age int `form:"age" binding:"min=18"`
 	}
 	var got optional
-	err, _ := run(t, "GET", "/u/1", "", "",
+	_, err := run(t, "GET", "/u/1", "", "",
 		func(c *zarp.Context) error { return binding.Query(c, &got) })
 	if err != nil {
 		t.Errorf("absent optional field failed its bound: %v", err)
@@ -396,7 +396,7 @@ func TestValidateNestedStruct(t *testing.T) {
 		Inner inner
 	}
 	var got outer
-	err, _ := run(t, "GET", "/u/1?name=x", "", "",
+	_, err := run(t, "GET", "/u/1?name=x", "", "",
 		func(c *zarp.Context) error { return binding.Query(c, &got) })
 
 	if err == nil || !strings.Contains(err.Error(), "Code") {
@@ -409,7 +409,7 @@ func TestValidateUnknownRule(t *testing.T) {
 		X string `form:"x" binding:"definitelynotarule"`
 	}
 	var got bad
-	err, _ := run(t, "GET", "/u/1?x=1", "", "",
+	_, err := run(t, "GET", "/u/1?x=1", "", "",
 		func(c *zarp.Context) error { return binding.Query(c, &got) })
 
 	if err == nil || !strings.Contains(err.Error(), "unknown rule") {
@@ -427,7 +427,7 @@ func TestEmailShapes(t *testing.T) {
 	// Escape the addresses: a bare "+" in a query string decodes to a space.
 	for _, addr := range ok {
 		var got e
-		err, _ := run(t, "GET", "/u/1?addr="+url.QueryEscape(addr), "", "",
+		_, err := run(t, "GET", "/u/1?addr="+url.QueryEscape(addr), "", "",
 			func(c *zarp.Context) error { return binding.Query(c, &got) })
 		if err != nil {
 			t.Errorf("%q rejected: %v", addr, err)
@@ -435,7 +435,7 @@ func TestEmailShapes(t *testing.T) {
 	}
 	for _, addr := range bad {
 		var got e
-		err, _ := run(t, "GET", "/u/1?addr="+url.QueryEscape(addr), "", "",
+		_, err := run(t, "GET", "/u/1?addr="+url.QueryEscape(addr), "", "",
 			func(c *zarp.Context) error { return binding.Query(c, &got) })
 		if err == nil {
 			t.Errorf("%q accepted", addr)
@@ -451,7 +451,7 @@ func BenchmarkBindQuery(b *testing.B) {
 		var s search
 		binding.Query(c, &s)
 	})
-	req := httptest.NewRequest("GET", "/s?q=go&page=2&ratio=1.5&live=true", nil)
+	req := httptest.NewRequest(http.MethodGet, "/s?q=go&page=2&ratio=1.5&live=true", nil)
 	rec := httptest.NewRecorder()
 	b.ReportAllocs()
 	for b.Loop() {

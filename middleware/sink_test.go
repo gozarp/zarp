@@ -20,7 +20,7 @@ func engineWithSink(t *testing.T, sink middleware.Sink, status int, target strin
 	e := zarp.New()
 	e.Use(middleware.LoggerWith(sink))
 	e.GET("/user/:id", func(c *zarp.Context) { c.Text(status, "body") })
-	e.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", target, nil))
+	e.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, target, nil))
 }
 
 // ---------------------------------------------------------------- Entry.Level
@@ -126,7 +126,7 @@ func TestDefaultSinkIsDependencyFree(t *testing.T) {
 	e.GET("/user/:id", func(c *zarp.Context) { c.Text(http.StatusOK, "ok") })
 
 	rec := httptest.NewRecorder()
-	e.ServeHTTP(rec, httptest.NewRequest("GET", "/user/42", nil))
+	e.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/user/42", nil))
 
 	if rec.Body.String() != "ok" {
 		t.Errorf("body = %q", rec.Body)

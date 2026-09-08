@@ -7,7 +7,7 @@
 <p align="center">
   <a href="https://github.com/gozarp/zarp/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/gozarp/zarp/actions/workflows/ci.yml/badge.svg"></a>
   <a href="https://pkg.go.dev/github.com/gozarp/zarp"><img alt="Go Reference" src="https://pkg.go.dev/badge/github.com/gozarp/zarp.svg"></a>
-  <a href="https://goreportcard.com/report/github.com/gozarp/zarp"><img alt="Go Report Card" src="https://goreportcard.com/badge/github.com/gozarp/zarp"></a>
+  <a href="https://github.com/gozarp/zarp/actions/workflows/lint.yml"><img alt="Lint" src="https://github.com/gozarp/zarp/actions/workflows/lint.yml/badge.svg"></a>
   <a href="go.mod"><img alt="Go version" src="https://img.shields.io/github/go-mod/go-version/gozarp/zarp"></a>
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-green.svg"></a>
   <br>
@@ -27,10 +27,9 @@ r.GET("/users/:id", func(c *zarp.Context) {
 r.Run(":8080")
 ```
 
-> 🚧 **Status: pre-alpha.** The core (radix router, pooled context, engine, groups, middleware
-> chain) and the optional `binding/`, `render/` and `middleware/` packages are built, tested and
-> benchmarked — 229 tests, clean under `-race`, allocation-free end to end. The API is not yet
-> frozen and the module has no tagged release. See the [roadmap](#️-roadmap).
+> 🚧 **Status: pre-alpha.** Everything documented here is built, tested and benchmarked — 229
+> tests, clean under `-race`, allocation-free end to end. The API is not yet frozen and there is
+> no tagged release, so pin a commit if you depend on it today.
 
 ---
 
@@ -276,12 +275,8 @@ zarp/
 ├── middleware/                logger, recovery, cors, requestid
 ├── examples/                  five runnable apps
 ├── benchmarks/                end-to-end perf suite plus BASELINE.md
-├── CLAUDE.md                  design constraints and conventions
-└── IMPLEMENTATION_GUIDE.md    package-by-package build spec
+└── CLAUDE.md                  design constraints and conventions
 ```
-
-[IMPLEMENTATION_GUIDE.md](IMPLEMENTATION_GUIDE.md) is the detailed spec: data structures,
-algorithms, edge cases, required tests and acceptance criteria for every package.
 
 ---
 
@@ -291,6 +286,7 @@ algorithms, edge cases, required tests and acceptance criteria for every package
 go build ./...
 go vet ./...
 gofmt -l .                                         # should print nothing
+golangci-lint run ./...                            # config in .golangci.yml
 
 go test ./...                                      # unit tests; benchmarks/ has none
 go test -run TestAddRouteLookup .                  # a single test
@@ -312,34 +308,12 @@ MSYS_NO_PATHCONV=1 docker run --rm -v "$(pwd -W)":/src -w /src golang:1.25 go te
 ### ✅ Pull request checklist
 
 - [ ] `go build ./... && go vet ./... && gofmt -l .` (the last prints nothing)
+- [ ] `golangci-lint run ./...` is clean
 - [ ] `go test ./...` and `go test -race ./...` pass
 - [ ] `benchstat` comparison in the description for any change to the router, context or chain
 - [ ] allocs/op did not increase for any benchmark
 - [ ] no new map, reflection call, or `fmt` call on the hot path — or a written justification
 - [ ] any new `Context` field is cleared in `reset`
-
----
-
-## 🗺️ Roadmap
-
-| | Milestone | State |
-|---|---|---|
-| M1 | Radix router — insertion, tree walk, wildcards, TSR, priority ordering | ✅ **done** — 0 allocs, benchmarked against `ServeMux` |
-| M2 | `Context` — pooling, `reset`, params/query/form/keys, response helpers, `Copy` | ✅ **done** — accessors are allocation-free |
-| M3 | `Engine` — `ServeHTTP`, `sync.Pool` wiring, 404/405/redirects | ✅ **done** — `NoRoute`, 405 + `Allow`, trailing-slash redirects, `Run`, race-clean pooling |
-| M4 | `RouterGroup` + chain execution — nesting, `Next`, `Abort`, `IRouter`/`IRoutes` | ✅ **done** |
-| P4 | Flat root package, `benchmarks/` split out, godoc pass | ✅ **done** |
-| M5 | `binding/` + `render/` | ✅ **done** — 6 binders, 6 validation rules, 6 renderers |
-| M6 | `middleware/` — logger, recovery, cors, requestid | ✅ **done** — `Recovery` costs ~8 ns; the logger is adapter-based and library-agnostic |
-| M7 | `examples/`, `Static`, CI, published baseline | ✅ **done** — see [BASELINE.md](benchmarks/BASELINE.md) |
-
-Remaining before a `v0.1.0` tag: an API review and freeze, godoc examples, and a cross-platform
-baseline run. [ROADMAP.md](ROADMAP.md) breaks each milestone into commit-sized steps and records
-the decisions behind them.
-
-A milestone starts only once the previous one's tests and benchmarks pass. The entire value
-proposition here is a performance claim, and a claim never measured at each layer cannot be
-attributed to a layer when it regresses.
 
 ---
 

@@ -21,7 +21,7 @@ func TestResponseWriterImplementsInterface(t *testing.T) {
 
 func TestResponseWriterDefaults(t *testing.T) {
 	rec := httptest.NewRecorder()
-	c := newContext(rec, httptest.NewRequest("GET", "/", nil))
+	c := newContext(rec, httptest.NewRequest(http.MethodGet, "/", nil))
 
 	if c.Writer.Status() != http.StatusOK {
 		t.Errorf("status = %d, want 200", c.Writer.Status())
@@ -36,7 +36,7 @@ func TestResponseWriterDefaults(t *testing.T) {
 
 func TestResponseWriterDeferredStatus(t *testing.T) {
 	rec := httptest.NewRecorder()
-	c := newContext(rec, httptest.NewRequest("GET", "/", nil))
+	c := newContext(rec, httptest.NewRequest(http.MethodGet, "/", nil))
 
 	c.Writer.WriteHeader(http.StatusTeapot)
 	if rec.Code != http.StatusOK {
@@ -55,7 +55,7 @@ func TestResponseWriterDeferredStatus(t *testing.T) {
 
 func TestResponseWriterStatusLockedAfterWrite(t *testing.T) {
 	rec := httptest.NewRecorder()
-	c := newContext(rec, httptest.NewRequest("GET", "/", nil))
+	c := newContext(rec, httptest.NewRequest(http.MethodGet, "/", nil))
 
 	c.Writer.WriteHeader(http.StatusCreated)
 	if _, err := c.Writer.Write([]byte("hello")); err != nil {
@@ -76,7 +76,7 @@ func TestResponseWriterStatusLockedAfterWrite(t *testing.T) {
 
 func TestResponseWriterImplicitHeader(t *testing.T) {
 	rec := httptest.NewRecorder()
-	c := newContext(rec, httptest.NewRequest("GET", "/", nil))
+	c := newContext(rec, httptest.NewRequest(http.MethodGet, "/", nil))
 
 	if _, err := c.writermem.WriteString("hi"); err != nil {
 		t.Fatal(err)
@@ -88,7 +88,7 @@ func TestResponseWriterImplicitHeader(t *testing.T) {
 
 func TestResponseWriterAccumulatesSize(t *testing.T) {
 	rec := httptest.NewRecorder()
-	c := newContext(rec, httptest.NewRequest("GET", "/", nil))
+	c := newContext(rec, httptest.NewRequest(http.MethodGet, "/", nil))
 
 	c.Writer.Write([]byte("abc"))
 	c.writermem.WriteString("de")
@@ -107,7 +107,7 @@ func (f *flushRecorder) Flush() { f.flushed = true }
 
 func TestResponseWriterFlushForwards(t *testing.T) {
 	fr := &flushRecorder{ResponseWriter: httptest.NewRecorder()}
-	c := newContext(fr, httptest.NewRequest("GET", "/", nil))
+	c := newContext(fr, httptest.NewRequest(http.MethodGet, "/", nil))
 
 	c.Writer.Flush()
 	if !fr.flushed {
@@ -119,7 +119,7 @@ func TestResponseWriterFlushForwards(t *testing.T) {
 }
 
 func TestResponseWriterHijackUnsupported(t *testing.T) {
-	c := newContext(httptest.NewRecorder(), httptest.NewRequest("GET", "/", nil))
+	c := newContext(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
 	if _, _, err := c.Writer.Hijack(); err == nil {
 		t.Error("Hijack on a non-Hijacker: want an error, got nil")
 	}
@@ -137,7 +137,7 @@ func (h *hijackRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 
 func TestResponseWriterHijackForwards(t *testing.T) {
 	hr := &hijackRecorder{ResponseWriter: httptest.NewRecorder()}
-	c := newContext(hr, httptest.NewRequest("GET", "/", nil))
+	c := newContext(hr, httptest.NewRequest(http.MethodGet, "/", nil))
 
 	if _, _, err := c.Writer.Hijack(); err != nil {
 		t.Fatal(err)
@@ -156,7 +156,7 @@ func TestResponseWriterHijackForwards(t *testing.T) {
 func TestResetClearsEveryField(t *testing.T) {
 	c := &Context{
 		Writer:     nil,
-		Request:    httptest.NewRequest("GET", "/old", nil),
+		Request:    httptest.NewRequest(http.MethodGet, "/old", nil),
 		Params:     Params{{"leak", "value"}},
 		handlers:   []HandlerFunc{func(*Context) {}},
 		queryCache: map[string][]string{"a": {"b"}},
@@ -169,7 +169,7 @@ func TestResetClearsEveryField(t *testing.T) {
 	c.writermem.status = http.StatusTeapot
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest("GET", "/new", nil)
+	req := httptest.NewRequest(http.MethodGet, "/new", nil)
 	c.reset(rec, req)
 
 	// Fields reset deliberately to a live value rather than the zero value.
@@ -221,7 +221,7 @@ func TestResetKeepsParamsCapacity(t *testing.T) {
 	c.Params = append(c.Params, Param{"a", "b"})
 	before := cap(c.Params)
 
-	c.reset(httptest.NewRecorder(), httptest.NewRequest("GET", "/", nil))
+	c.reset(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
 
 	if len(c.Params) != 0 {
 		t.Errorf("len = %d, want 0", len(c.Params))
@@ -234,7 +234,7 @@ func TestResetKeepsParamsCapacity(t *testing.T) {
 func BenchmarkContextReset(b *testing.B) {
 	c := &Context{Params: make(Params, 0, 4)}
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest("GET", "/user/42", nil)
+	req := httptest.NewRequest(http.MethodGet, "/user/42", nil)
 	b.ReportAllocs()
 	for b.Loop() {
 		c.reset(rec, req)

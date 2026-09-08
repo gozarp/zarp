@@ -128,7 +128,7 @@ func TestFormFile(t *testing.T) {
 	w.Close()
 
 	rec := httptest.NewRecorder()
-	r := httptest.NewRequest("POST", "/upload", &body)
+	r := httptest.NewRequest(http.MethodPost, "/upload", &body)
 	r.Header.Set("Content-Type", w.FormDataContentType())
 	c := &Context{engine: &Engine{MaxMultipartMemory: 1 << 20}}
 	c.reset(rec, r)

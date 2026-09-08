@@ -18,7 +18,7 @@ func bindQuery(t *testing.T, query string, target any) error {
 	var err error
 	e := zarp.New()
 	e.GET("/x", func(c *zarp.Context) { err = binding.Query(c, target) })
-	e.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/x?"+query, nil))
+	e.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/x?"+query, nil))
 	return err
 }
 
@@ -179,7 +179,7 @@ func TestBindSkipsUnexportedFields(t *testing.T) {
 	if got.Q != "go" {
 		t.Errorf("Q = %q", got.Q)
 	}
-	if got.page.Limit != 0 {
+	if got.Limit != 0 {
 		t.Errorf("unexported embedded field was written: %+v", got.page)
 	}
 }
@@ -205,7 +205,7 @@ func TestJSONUseNumber(t *testing.T) {
 	e := zarp.New()
 	e.POST("/x", func(c *zarp.Context) { err = binding.JSON(c, &got) })
 
-	req := httptest.NewRequest("POST", "/x", strings.NewReader(`{"n":10000000000000000001}`))
+	req := httptest.NewRequest(http.MethodPost, "/x", strings.NewReader(`{"n":10000000000000000001}`))
 	req.Header.Set("Content-Type", binding.MIMEJSON)
 	e.ServeHTTP(httptest.NewRecorder(), req)
 
@@ -233,7 +233,7 @@ func TestMultipartOnNonMultipartBody(t *testing.T) {
 		var target struct{}
 		err = binding.Multipart(c, &target)
 	})
-	req := httptest.NewRequest("POST", "/x", strings.NewReader("a=b"))
+	req := httptest.NewRequest(http.MethodPost, "/x", strings.NewReader("a=b"))
 	req.Header.Set("Content-Type", binding.MIMEPOSTForm)
 	e.ServeHTTP(httptest.NewRecorder(), req)
 
@@ -355,7 +355,7 @@ func TestURIBindingSkipsAbsentParams(t *testing.T) {
 	var err error
 	e := zarp.New()
 	e.GET("/u/:id", func(c *zarp.Context) { err = binding.URI(c, &got) })
-	e.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/u/7", nil))
+	e.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/u/7", nil))
 
 	if err != nil {
 		t.Fatalf("bind: %v", err)

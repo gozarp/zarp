@@ -56,7 +56,7 @@ func TestPoolIsolationUnderLoad(t *testing.T) {
 			target := "/u/" + id + "/p/" + pid + "?q=" + id
 
 			rec := httptest.NewRecorder()
-			e.ServeHTTP(rec, httptest.NewRequest("GET", target, nil))
+			e.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, target, nil))
 
 			want := id + "/" + pid + "/" + pid
 			if got := rec.Body.String(); got != want {
@@ -96,7 +96,7 @@ func TestPoolAcrossMixedRoutes(t *testing.T) {
 			go func(target, want string) {
 				defer wg.Done()
 				rec := httptest.NewRecorder()
-				e.ServeHTTP(rec, httptest.NewRequest("GET", target, nil))
+				e.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, target, nil))
 				if got := rec.Body.String(); got != want {
 					t.Errorf("%s = %q, want %q", target, got, want)
 				}
@@ -127,7 +127,7 @@ func TestCopySurvivesTheOriginalReturningToThePool(t *testing.T) {
 
 	for i := range 50 {
 		rec := httptest.NewRecorder()
-		e.ServeHTTP(rec, httptest.NewRequest("GET", fmt.Sprintf("/u/%d", i), nil))
+		e.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, fmt.Sprintf("/u/%d", i), nil))
 	}
 	for range 50 {
 		<-done
