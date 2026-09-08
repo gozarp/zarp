@@ -1,5 +1,5 @@
-// Package gomicro is a lightweight HTTP framework: Gin-style ergonomics with
-// stdlib-level overhead, built on the standard library alone.
+// Package gomicro is a lightweight HTTP framework: expressive routing and
+// middleware with stdlib-level overhead, built on the standard library alone.
 //
 // # Getting started
 //
