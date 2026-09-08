@@ -18,6 +18,7 @@ type RedirectRender struct {
 // WriteContentType does nothing: http.Redirect writes its own.
 func (r RedirectRender) WriteContentType(http.ResponseWriter) {}
 
+// Render sends the redirect, or reports a status that is not one.
 func (r RedirectRender) Render(w http.ResponseWriter) error {
 	if (r.Code < http.StatusMultipleChoices || r.Code > http.StatusPermanentRedirect) &&
 		r.Code != http.StatusCreated {

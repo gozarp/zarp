@@ -26,6 +26,14 @@ const (
 	defaultStatus = http.StatusOK
 )
 
+// ResponseWriter is the http.ResponseWriter handlers are given. Beyond the
+// standard interface it reports what has been written — which is how middleware
+// logs a status and size it never set itself — and it defers the status until
+// the first write, so a later handler in the chain can still change it.
+//
+// Flusher and Hijacker are part of the interface rather than an optional
+// assertion, because streaming responses and protocol upgrades break silently
+// when a wrapper forgets to forward them.
 type ResponseWriter interface {
 	http.ResponseWriter
 	http.Flusher

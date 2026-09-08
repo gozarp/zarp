@@ -29,6 +29,7 @@ type FieldError struct {
 	Msg   string
 }
 
+// Error implements error: the field name followed by what was wrong with it.
 func (e FieldError) Error() string {
 	return e.Field + ": " + e.Msg
 }
@@ -37,6 +38,8 @@ func (e FieldError) Error() string {
 // fixing one field at a time is a bad experience.
 type ValidationErrors []FieldError
 
+// Error implements error, joining every failure so one response tells the
+// client about all of them.
 func (errs ValidationErrors) Error() string {
 	parts := make([]string, len(errs))
 	for i, e := range errs {

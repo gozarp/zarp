@@ -16,10 +16,14 @@ type HTMLRender struct {
 	Data     any
 }
 
+// WriteContentType sets text/html unless the handler chose otherwise.
 func (r HTMLRender) WriteContentType(w http.ResponseWriter) {
 	writeContentType(w, "text/html; charset=utf-8")
 }
 
+// Render executes the template into a buffer, then writes it. A template
+// that fails half way through therefore produces an error and no body, rather
+// than half a page behind a status that has already gone out.
 func (r HTMLRender) Render(w http.ResponseWriter) error {
 	if r.Template == nil {
 		return fmt.Errorf("render: no templates loaded")

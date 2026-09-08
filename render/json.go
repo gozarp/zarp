@@ -13,10 +13,12 @@ const jsonContentType = "application/json; charset=utf-8"
 // JSONRender writes obj as JSON.
 type JSONRender struct{ Data any }
 
+// WriteContentType sets application/json unless the handler chose otherwise.
 func (r JSONRender) WriteContentType(w http.ResponseWriter) {
 	writeContentType(w, jsonContentType)
 }
 
+// Render writes Data as JSON, without the trailing newline Encode appends.
 func (r JSONRender) Render(w http.ResponseWriter) error {
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(r.Data); err != nil {
@@ -35,10 +37,12 @@ type IndentedJSONRender struct {
 	Indent string
 }
 
+// WriteContentType sets application/json unless the handler chose otherwise.
 func (r IndentedJSONRender) WriteContentType(w http.ResponseWriter) {
 	writeContentType(w, jsonContentType)
 }
 
+// Render writes Data as indented JSON, defaulting to four spaces.
 func (r IndentedJSONRender) Render(w http.ResponseWriter) error {
 	indent := r.Indent
 	if indent == "" {

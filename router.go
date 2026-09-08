@@ -1,11 +1,23 @@
 package gomicro
 
+// Param is one URL parameter matched by a route: the ":id" in "/users/:id",
+// paired with the value from the request.
 type Param struct {
 	Key, Value string
 }
 
+// Params holds the parameters matched for one request, in the order the
+// wildcards appear in the route.
+//
+// It is a slice rather than a map on purpose. A map costs a hash and an
+// allocation on every request carrying a parameter; routes carry a handful at
+// most, so a linear scan is both faster and allocation-free. The router fills a
+// buffer the pooled Context already owns, which is why matching a param route
+// allocates nothing at all.
 type Params []Param
 
+// Get returns the value of the parameter named name, and whether the route had
+// one. Use it to tell an absent parameter from an empty one.
 func (p Params) Get(name string) (string, bool) {
 	for _, param := range p {
 		if param.Key == name {
@@ -15,6 +27,8 @@ func (p Params) Get(name string) (string, bool) {
 	return "", false
 }
 
+// ByName returns the value of the parameter named name, or "" if the route has
+// no such parameter. Context.Param is the usual way to reach this.
 func (p Params) ByName(name string) string {
 	for _, param := range p {
 		if param.Key == name {

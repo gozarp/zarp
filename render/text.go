@@ -17,10 +17,12 @@ type TextRender struct {
 	Values []any
 }
 
+// WriteContentType sets text/plain unless the handler chose otherwise.
 func (r TextRender) WriteContentType(w http.ResponseWriter) {
 	writeContentType(w, plainContentType)
 }
 
+// Render writes Format, applying Values through fmt only when there are any.
 func (r TextRender) Render(w http.ResponseWriter) error {
 	if len(r.Values) == 0 {
 		_, err := io.WriteString(w, r.Format)
@@ -36,10 +38,12 @@ type DataRender struct {
 	Data        []byte
 }
 
+// WriteContentType sets ContentType unless the handler chose otherwise.
 func (r DataRender) WriteContentType(w http.ResponseWriter) {
 	writeContentType(w, r.ContentType)
 }
 
+// Render writes Data verbatim.
 func (r DataRender) Render(w http.ResponseWriter) error {
 	_, err := w.Write(r.Data)
 	return err

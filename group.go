@@ -101,30 +101,41 @@ func (g *RouterGroup) Handle(method, relativePath string, handlers ...HandlerFun
 	return g.handle(method, relativePath, handlers)
 }
 
+// GET registers handlers for a GET route, the method for reading a resource.
 func (g *RouterGroup) GET(relativePath string, handlers ...HandlerFunc) *RouterGroup {
 	return g.handle(http.MethodGet, relativePath, handlers)
 }
 
+// POST registers handlers for a POST route, the method for creating one.
 func (g *RouterGroup) POST(relativePath string, handlers ...HandlerFunc) *RouterGroup {
 	return g.handle(http.MethodPost, relativePath, handlers)
 }
 
+// PUT registers handlers for a PUT route, the method for replacing one.
 func (g *RouterGroup) PUT(relativePath string, handlers ...HandlerFunc) *RouterGroup {
 	return g.handle(http.MethodPut, relativePath, handlers)
 }
 
+// PATCH registers handlers for a PATCH route, the method for a partial
+// update.
 func (g *RouterGroup) PATCH(relativePath string, handlers ...HandlerFunc) *RouterGroup {
 	return g.handle(http.MethodPatch, relativePath, handlers)
 }
 
+// DELETE registers handlers for a DELETE route.
 func (g *RouterGroup) DELETE(relativePath string, handlers ...HandlerFunc) *RouterGroup {
 	return g.handle(http.MethodDelete, relativePath, handlers)
 }
 
+// HEAD registers handlers for a HEAD route: a GET whose response carries
+// headers but no body.
 func (g *RouterGroup) HEAD(relativePath string, handlers ...HandlerFunc) *RouterGroup {
 	return g.handle(http.MethodHead, relativePath, handlers)
 }
 
+// OPTIONS registers handlers for an OPTIONS route. gomicro does not answer
+// OPTIONS on its own, so a CORS preflight needs either this or the CORS
+// middleware.
 func (g *RouterGroup) OPTIONS(relativePath string, handlers ...HandlerFunc) *RouterGroup {
 	return g.handle(http.MethodOptions, relativePath, handlers)
 }

@@ -33,8 +33,19 @@ jobs:
       - name: Tidy check
         run: |
           go mod tidy
-          git diff --exit-code go.mod go.sum 2>/dev/null || {
-            echo "go.mod/go.sum are not tidy"; exit 1; }
+          # --porcelain with an explicit "--" handles the case this module is
+          # normally in: no go.sum at all, because there are no dependencies.
+          # Without the separator git reads go.sum as a revision and exits 128,
+          # which looks exactly like an untidy tree but is not one. This also
+          # catches a go.sum that tidy newly created, which git diff would miss
+          # because it is untracked.
+          changed=$(git status --porcelain -- go.mod go.sum)
+          if [ -n "$changed" ]; then
+            echo "go mod tidy changed these files:"
+            echo "$changed"
+            git diff -- go.mod go.sum
+            exit 1
+          fi
 
   test:
     runs-on: ubuntu-latest
