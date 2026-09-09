@@ -3,6 +3,7 @@ package middleware
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"strconv"
 
 	"github.com/gozarp/zarp"
 )
@@ -20,6 +21,11 @@ type RequestIDConfig struct {
 
 	// Generator produces an id when there is no usable inbound one. Defaults
 	// to 16 random bytes, hex encoded.
+	//
+	// Its output is held to the same grammar as an inbound id, and a value
+	// that fails it is replaced by the default generator: whatever else is
+	// true, the id this middleware sets is safe to put in a header and a log
+	// line.
 	Generator func() string
 
 	// TrustInbound reuses a client-supplied id, so a trace spans services.
@@ -43,6 +49,11 @@ func RequestIDWithConfig(cfg RequestIDConfig) zarp.HandlerFunc {
 	if header == "" {
 		header = RequestIDHeader
 	}
+	if !validHeaderName(header) {
+		// A configuration error, and one that would otherwise surface as a
+		// header nothing can read rather than as a mistake.
+		panic("zarp: RequestID header name is not a valid HTTP field name: " + strconv.Quote(header))
+	}
 	generate := cfg.Generator
 	if generate == nil {
 		generate = newRequestID
@@ -57,6 +68,11 @@ func RequestIDWithConfig(cfg RequestIDConfig) zarp.HandlerFunc {
 		}
 		if id == "" {
 			id = generate()
+			if !validRequestID(id) {
+				// A custom generator handed back something that does not belong
+				// in a header. Fall back rather than emit it.
+				id = newRequestID()
+			}
 		}
 
 		c.Set(RequestIDKey, id)
@@ -78,6 +94,35 @@ func newRequestID() string {
 	// panics rather than returning an error worth checking.
 	rand.Read(b[:])
 	return hex.EncodeToString(b[:])
+}
+
+// validHeaderName reports whether name is an RFC 9110 field name — a token, so
+// no spaces, colons or control characters. Checked when the middleware is
+// built, because a bad name is a mistake in the program rather than in a
+// request.
+func validHeaderName(name string) bool {
+	if name == "" {
+		return false
+	}
+	for i := range len(name) {
+		if !isTokenByte(name[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+// isTokenByte reports whether c may appear in an RFC 9110 token.
+func isTokenByte(c byte) bool {
+	switch {
+	case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9':
+		return true
+	}
+	switch c {
+	case '!', '#', '$', '%', '&', '\'', '*', '+', '-', '.', '^', '_', '`', '|', '~':
+		return true
+	}
+	return false
 }
 
 // validRequestID accepts [A-Za-z0-9._:-]{1,128} and nothing else.

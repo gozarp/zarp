@@ -187,11 +187,11 @@ func checkOrigin(origin string) error {
 		return fmt.Errorf("origin %q has a query or fragment: an Origin header carries scheme and host only", origin)
 	case u.User != nil:
 		return fmt.Errorf("origin %q has userinfo: an Origin header carries scheme and host only", origin)
-	case u.Host != strings.ToLower(u.Host):
-		// A browser serialises the origin lowercased, so a configured
-		// "https://Example.com" is a rule that can never fire.
+	case origin != strings.ToLower(origin):
+		// A browser serialises scheme and host lowercased, so a configured
+		// "HTTPS://Example.com" is a rule that can never fire.
 		return fmt.Errorf("origin %q must be lowercase: browsers send %q",
-			origin, u.Scheme+"://"+strings.ToLower(u.Host))
+			origin, strings.ToLower(origin))
 	}
 	return nil
 }

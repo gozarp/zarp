@@ -723,3 +723,87 @@ func TestResponseWriterUnwrap(t *testing.T) {
 		t.Errorf("ResponseController.Flush through the wrapper: %v", err)
 	}
 }
+
+func TestFormErrorDistinguishesAbsentFromMalformed(t *testing.T) {
+	tests := []struct {
+		name        string
+		body        string
+		contentType string
+		wantErr     bool
+	}{
+		{"well formed", "name=octocat&role=admin", "application/x-www-form-urlencoded", false},
+		{"field absent", "role=admin", "application/x-www-form-urlencoded", false},
+		{"empty body", "", "application/x-www-form-urlencoded", false},
+		// Go rejects a semicolon separator, and %zz is not an escape.
+		{"semicolon separator", "name=a;role=b", "application/x-www-form-urlencoded", true},
+		{"bad escape", "name=%zz", "application/x-www-form-urlencoded", true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			c, _ := ctxFor(http.MethodPost, "/x", tc.body)
+			c.Request.Header.Set("Content-Type", tc.contentType)
+
+			name := c.PostForm("name")
+			err := c.FormError()
+
+			switch {
+			case tc.wantErr && err == nil:
+				t.Errorf("malformed body reported no error; PostForm gave %q", name)
+			case !tc.wantErr && err != nil:
+				t.Errorf("well-formed body reported %v", err)
+			}
+		})
+	}
+}
+
+func TestFormErrorIsClearedByReset(t *testing.T) {
+	rec := httptest.NewRecorder()
+	c := &Context{}
+
+	bad := httptest.NewRequest(http.MethodPost, "/x", strings.NewReader("name=%zz"))
+	bad.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	c.reset(rec, bad)
+	if c.FormError() == nil {
+		t.Fatal("malformed body reported no error")
+	}
+
+	// The Context goes back to the pool and must not carry the failure into
+	// the next request.
+	good := httptest.NewRequest(http.MethodPost, "/x", strings.NewReader("name=ok"))
+	good.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	c.reset(rec, good)
+	if err := c.FormError(); err != nil {
+		t.Errorf("error survived reset: %v", err)
+	}
+}
+
+func TestRedirectAcceptsOnly3xx(t *testing.T) {
+	for _, code := range []int{300, 301, 302, 303, 307, 308} {
+		t.Run(strconv.Itoa(code), func(t *testing.T) {
+			c, rec := ctxFor(http.MethodGet, "/", "")
+			c.Redirect(code, "/elsewhere")
+
+			if rec.Code != code {
+				t.Errorf("code = %d, want %d", rec.Code, code)
+			}
+			if got := rec.Header().Get("Location"); got != "/elsewhere" {
+				t.Errorf("Location = %q", got)
+			}
+		})
+	}
+
+	// 201 is not a redirect. A created resource carries Location alongside its
+	// own body, which is a different thing entirely.
+	for _, code := range []int{200, 201, 204, 299, 400, 500} {
+		t.Run("rejects "+strconv.Itoa(code), func(t *testing.T) {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("Redirect(%d) did not panic", code)
+				}
+			}()
+			c, _ := ctxFor(http.MethodGet, "/", "")
+			c.Redirect(code, "/elsewhere")
+		})
+	}
+}

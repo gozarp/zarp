@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"net/http"
+	"strconv"
 
 	"github.com/gozarp/zarp"
 )
@@ -27,7 +28,14 @@ import (
 // The engine's MaxMultipartMemory is a different setting: it bounds how much of
 // a multipart body is buffered in memory before spilling to disk, not how large
 // the body may be.
+// A limit of zero or less panics rather than being honoured. net/http would
+// read it as "no bytes at all", so an unset configuration value would silently
+// reject every request that carries a body — a failure mode that looks like a
+// client problem and is not.
 func MaxBodySize(n int64) zarp.HandlerFunc {
+	if n <= 0 {
+		panic("zarp: MaxBodySize needs a positive limit, got " + strconv.FormatInt(n, 10))
+	}
 	return func(c *zarp.Context) {
 		if c.Request != nil && c.Request.Body != nil {
 			c.Request.Body = http.MaxBytesReader(c.Writer.Unwrap(), c.Request.Body, n)

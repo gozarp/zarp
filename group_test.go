@@ -51,8 +51,25 @@ func TestHandleCustomMethod(t *testing.T) {
 	}
 }
 
+func TestHandleAcceptsRegisteredMethodsWithHyphens(t *testing.T) {
+	// IANA registers these, WebDAV versioning uses them, and an "A-Z only"
+	// check made them unregisterable.
+	for _, method := range []string{"BASELINE-CONTROL", "VERSION-CONTROL", "M-SEARCH"} {
+		t.Run(method, func(t *testing.T) {
+			e := New()
+			e.Handle(method, "/r", func(c *Context) { c.Text(http.StatusOK, "ok") })
+
+			if got := serve(e, method, "/r").Body.String(); got != "ok" {
+				t.Errorf("body = %q", got)
+			}
+		})
+	}
+}
+
 func TestHandleRejectsInvalidMethod(t *testing.T) {
-	for _, method := range []string{"", "get", "GET ", "G3T"} {
+	// "get" is a legal token but a route no client reaches, so it is refused
+	// as the typo it almost always is.
+	for _, method := range []string{"", "get", "Get", "GET ", "GET\n", "GET:", `GET"`} {
 		func() {
 			defer func() {
 				if r := recover(); r == nil {

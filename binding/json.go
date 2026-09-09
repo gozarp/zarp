@@ -91,13 +91,25 @@ func (b jsonBinding) Bind(c *zarp.Context, obj any) error {
 
 	// One request carries one document. A body that decodes and then continues
 	// — `{"a":1} {"b":2}`, or JSON followed by anything else — is a request two
-	// parsers can disagree about, which is where smuggling bugs live. More
-	// reports whether a value follows, skipping whitespace, so a trailing
-	// newline is still a well-formed body.
-	if decoder.More() {
+	// parsers can disagree about, which is where smuggling bugs live.
+	//
+	// The test is a second Decode that must hit EOF, not Decoder.More. More is
+	// built for iterating the elements of one array or object, so it answers
+	// "is there another element here", and reports false on the very tokens
+	// that close one: a body of `{"a":1} }` slipped past it. Decoding again is
+	// the only question with the right shape — is there anything after this
+	// value — and whitespace before EOF still answers no.
+	var trailing json.RawMessage
+	switch err := decoder.Decode(&trailing); {
+	case errors.Is(err, io.EOF):
+		return nil
+	case err == nil:
 		return ErrTrailingContent
+	default:
+		// Something follows that is not even a JSON value. Still one body too
+		// many, and the decoder's own complaint says what it was.
+		return fmt.Errorf("%w: %w", ErrTrailingContent, err)
 	}
-	return nil
 }
 
 // decodeError translates the decoder's failures into ones an API can act on.

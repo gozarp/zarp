@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -800,5 +801,75 @@ func TestLoggerEscapesControlCharactersInPath(t *testing.T) {
 	}
 	if !strings.Contains(line, `\n`) {
 		t.Errorf("newline was not escaped: %q", line)
+	}
+}
+
+func TestRequestIDValidatesGeneratorOutput(t *testing.T) {
+	// A generator that returns something unfit for a header must not put it in
+	// one: the middleware falls back rather than emitting it.
+	var seen string
+	e := zarp.New()
+	e.Use(middleware.RequestIDWithConfig(middleware.RequestIDConfig{
+		Generator: func() string { return "bad id\r\nX-Injected: evil" },
+	}))
+	e.GET("/x", func(c *zarp.Context) { seen = middleware.GetRequestID(c) })
+
+	rec := serve(e, http.MethodGet, "/x")
+
+	if strings.ContainsAny(seen, "\r\n ") {
+		t.Errorf("emitted id %q carries characters a header cannot hold", seen)
+	}
+	if len(seen) != 32 {
+		t.Errorf("id = %q, want the built-in generator's output", seen)
+	}
+	if got := rec.Header().Get(middleware.RequestIDHeader); got != seen {
+		t.Errorf("header = %q, stored = %q", got, seen)
+	}
+}
+
+func TestRequestIDRejectsAMalformedHeaderName(t *testing.T) {
+	for _, name := range []string{"X Request Id", "X-Request-Id:", "X-Request\nId", `X-"Id"`} {
+		t.Run(name, func(t *testing.T) {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("header name %q was accepted", name)
+				}
+			}()
+			middleware.RequestIDWithConfig(middleware.RequestIDConfig{Header: name})
+		})
+	}
+}
+
+func TestMaxBodySizeRejectsANonPositiveLimit(t *testing.T) {
+	for _, n := range []int64{0, -1} {
+		t.Run(strconv.FormatInt(n, 10), func(t *testing.T) {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("MaxBodySize(%d) was accepted; it would reject every body", n)
+				}
+			}()
+			middleware.MaxBodySize(n)
+		})
+	}
+}
+
+func TestRecoveryEscapesThePanicValue(t *testing.T) {
+	var buf bytes.Buffer
+	e := zarp.New()
+	e.Use(middleware.RecoveryWithWriter(&buf))
+	e.GET("/x", func(*zarp.Context) {
+		panic("boom\n[zarp] panic recovered: GET /elsewhere")
+	})
+
+	e.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/x", nil))
+
+	// The stack trace has newlines of its own; what matters is that the panic
+	// value did not contribute one.
+	header, _, _ := strings.Cut(buf.String(), "\n")
+	if !strings.Contains(buf.String(), `boom\n`) {
+		t.Errorf("panic value was not escaped:\n%s", buf.String())
+	}
+	if strings.Contains(header, "elsewhere") {
+		t.Errorf("panic value broke out of its line: %q", header)
 	}
 }

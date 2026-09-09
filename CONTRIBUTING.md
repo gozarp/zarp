@@ -69,6 +69,9 @@ writing before review continues:
 - **No reflection in the hot path** — struct-tag binding and validation are opt-in and live in
   `binding/`.
 - **No rendering engine in core** — templates and XML live in `render/`.
+- **Configure, then serve** — the router and the Engine's fields are read without a lock while
+  requests run. Registration happens at startup; do not add a mutex to the lookup path to relax
+  that.
 
 If a change adds an allocation, a reflection call, or a map lookup to the hot request path, say so
 in the description and explain why it earns its cost.

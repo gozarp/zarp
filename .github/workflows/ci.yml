@@ -62,8 +62,9 @@ jobs:
       # authoritative run for it.
       #
       # Coverage is measured over the library packages only. examples/ are
-      # main packages verified by `go build` and by being run; counting their
-      # main() as uncovered would only dilute the number the gate reads.
+      # main packages, compiled by the build job above and not executed here;
+      # counting their main() as uncovered would only dilute the number the
+      # gate reads.
       - name: Test (race + coverage)
         run: |
           go test -race -covermode=atomic -coverprofile=coverage.out             . ./binding ./render ./middleware

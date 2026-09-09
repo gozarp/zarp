@@ -27,7 +27,7 @@ r.GET("/users/:id", func(c *zarp.Context) {
 r.Run(":8080")
 ```
 
-> 🚧 **Status: pre-alpha.** Everything documented here is built, tested and benchmarked — 263
+> 🚧 **Status: pre-alpha.** Everything documented here is built, tested and benchmarked — 273
 > tests, clean under `-race`, 96% covered, and allocation-free on the paths below. The API is not
 > yet frozen and there is no tagged release, so pin a commit if you depend on it today; the
 > remaining work before a tag is in [ROADMAP.md](ROADMAP.md).
@@ -173,6 +173,7 @@ go test -bench='Router|ServeMux|Context' -benchmem -run XXX .    # micro-benchma
 - Route groups with prefix and middleware nesting; `GET`/`POST`/`PUT`/`PATCH`/`DELETE`/`HEAD`/
   `OPTIONS`/`Any`/`Handle`
 - `NoRoute` and `NoMethod` fallbacks, reachable from a handler with `c.NotFound()`
+- `c.FormError()`, so a body that failed to parse is distinguishable from one that left a field out
 - `Static`, `StaticFS`, `StaticFile`, and `SecureDir` for a root symlinks cannot escape
 
 **Optional packages** (import only what you use)
@@ -337,9 +338,15 @@ you can reverse deliberately, and none of them is reversed for you:
 `middleware.MaxBodySize` bounds every body, not only the ones a binder reads, and
 `middleware.Timeout` puts a deadline on the request context.
 
-**One thing to internalise:** a middleware that returns without calling `c.Abort()` does **not**
-stop the chain — the next handler still runs. Use `c.AbortWithStatusJSON(401, …)` and then return.
-This is documented on `HandlerFunc`, and it is the mistake most likely to become a security bug.
+**Two things to internalise.**
+
+A middleware that returns without calling `c.Abort()` does **not** stop the chain — the next
+handler still runs. Use `c.AbortWithStatusJSON(401, …)` and then return. This is documented on
+`HandlerFunc`, and it is the mistake most likely to become a security bug.
+
+And an `Engine` is configured, then served: routes, middleware, fallbacks and the fields above are
+all read without a lock while requests are in flight. Finish configuring before you call
+`ListenAndServe`; changing any of it afterwards is a data race, and the race detector will say so.
 
 ---
 

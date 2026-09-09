@@ -644,3 +644,68 @@ func TestFieldErrorNamesFollowTheRequest(t *testing.T) {
 		}
 	}
 }
+
+func TestJSONTrailingContentEdgeCases(t *testing.T) {
+	// Decoder.More reports false on the tokens that close an array or object,
+	// so these two are exactly the bodies it let through.
+	rejected := map[string]string{
+		"closing brace":  `{"name":"a"} }`,
+		"closing square": `{"name":"a"} ]`,
+		"comma":          `{"name":"a"} ,`,
+		"number":         `{"name":"a"} 5`,
+		"string":         `{"name":"a"} "x"`,
+		"null":           `{"name":"a"} null`,
+		"true":           `{"name":"a"} true`,
+	}
+	for name, body := range rejected {
+		t.Run(name, func(t *testing.T) {
+			var got user
+			_, err := run(t, "POST", "/u/1", body, binding.MIMEJSON,
+				func(c *zarp.Context) error { return binding.JSON(c, &got) })
+
+			if !errors.Is(err, binding.ErrTrailingContent) {
+				t.Errorf("body %q: err = %v, want ErrTrailingContent", body, err)
+			}
+		})
+	}
+
+	accepted := map[string]string{
+		"bare":               `{"name":"a"}`,
+		"trailing newline":   "{\"name\":\"a\"}\n",
+		"trailing space":     `{"name":"a"}   `,
+		"surrounding spaces": "  {\"name\":\"a\"} \n\t ",
+	}
+	for name, body := range accepted {
+		t.Run(name, func(t *testing.T) {
+			var got user
+			_, err := run(t, "POST", "/u/1", body, binding.MIMEJSON,
+				func(c *zarp.Context) error { return binding.JSON(c, &got) })
+
+			if err != nil {
+				t.Errorf("body %q rejected: %v", body, err)
+			}
+		})
+	}
+}
+
+func TestFormBindingReportsAParseFailure(t *testing.T) {
+	// A body that is not parseable as a form must be an error, not a struct
+	// full of zero values that looks like a client who sent nothing.
+	type form struct {
+		Name string `form:"name"`
+	}
+	var got form
+	var err error
+
+	e := zarp.New()
+	e.POST("/x", func(c *zarp.Context) { err = binding.Form(c, &got) })
+
+	rec := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/x", strings.NewReader("name=a;b=%zz"))
+	r.Header.Set("Content-Type", binding.MIMEPOSTForm)
+	e.ServeHTTP(rec, r)
+
+	if err == nil {
+		t.Fatalf("malformed form body bound cleanly as %+v", got)
+	}
+}

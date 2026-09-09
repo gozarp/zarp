@@ -35,6 +35,10 @@ import (
 // This costs one allocation per request: Request.WithContext shallow-copies the
 // request, which is why it is middleware you opt into rather than engine
 // behaviour.
+//
+// A zero or negative d is passed through rather than rejected: it produces a
+// context that is already past its deadline, which is occasionally what a test
+// wants and is never what production wants.
 func Timeout(d time.Duration) zarp.HandlerFunc {
 	return func(c *zarp.Context) {
 		if c.Request == nil {

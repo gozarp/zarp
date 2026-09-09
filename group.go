@@ -198,14 +198,35 @@ func lastChar(s string) byte {
 // isValidMethod reports whether method is a well-formed HTTP token. Methods are
 // case-sensitive and conventionally upper case; the router keys its trees on
 // the string as given, so "get" would never match a real request.
+// isValidMethod reports whether method is an RFC 9110 token, which is what an
+// HTTP method has to be.
+//
+// Not "A-Z only": several IANA-registered methods carry a hyphen —
+// BASELINE-CONTROL and VERSION-CONTROL from WebDAV versioning, and
+// M-SEARCH from SSDP — and rejecting them would make routes that real clients
+// send unregisterable. Methods are case-sensitive, so a lowercase "get" is a
+// legal token that simply never matches a client sending "GET"; use the GET
+// method for that.
 func isValidMethod(method string) bool {
 	if method == "" {
 		return false
 	}
-	for i := 0; i < len(method); i++ {
-		if c := method[i]; c < 'A' || c > 'Z' {
+	for i := range len(method) {
+		if !isMethodTokenByte(method[i]) {
 			return false
 		}
 	}
 	return true
+}
+
+func isMethodTokenByte(c byte) bool {
+	switch {
+	case c >= 'A' && c <= 'Z', c >= '0' && c <= '9':
+		return true
+	}
+	switch c {
+	case '!', '#', '$', '%', '&', '\'', '*', '+', '-', '.', '^', '_', '`', '|', '~':
+		return true
+	}
+	return false
 }

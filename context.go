@@ -142,6 +142,7 @@ type Context struct {
 	handlers   []HandlerFunc
 	queryCache url.Values
 	formCache  url.Values
+	formErr    error
 	keys       map[string]any
 	engine     *Engine
 	fullPath   string
@@ -160,6 +161,7 @@ func (c *Context) reset(w http.ResponseWriter, r *http.Request) {
 	c.handlers = nil
 	c.queryCache = nil
 	c.formCache = nil
+	c.formErr = nil
 	c.keys = nil
 	c.fullPath = ""
 	c.index = -1
@@ -251,8 +253,16 @@ func (c *Context) GetQueryArray(key string) ([]string, bool) {
 
 // ---------------------------------------------------------------- form
 
+// multipartContentType is the only body type ParseMultipartForm is asked to
+// handle; anything else goes through ParseForm alone.
+const multipartContentType = "multipart/form-data"
+
 // initFormCache parses the request body once. ParseMultipartForm handles both
 // urlencoded and multipart bodies, so a non-multipart body is not an error.
+//
+// A parse failure is recorded rather than raised: the accessors return zero
+// values, as they do for a field that simply was not sent, and FormError says
+// which of the two happened.
 func (c *Context) initFormCache() {
 	if c.formCache != nil {
 		return
@@ -261,17 +271,49 @@ func (c *Context) initFormCache() {
 	if c.Request == nil {
 		return
 	}
-	if err := c.Request.ParseMultipartForm(c.maxMultipartMemory()); err != nil &&
-		!errors.Is(err, http.ErrNotMultipart) {
-		// A malformed or oversized body leaves the cache empty: the handler
-		// sees absent values rather than a panic.
-		if c.Request.PostForm == nil {
-			return
+
+	// ParseForm first, and only then ParseMultipartForm, because the reverse
+	// order loses the error. ParseMultipartForm calls ParseForm itself, and if
+	// the body turns out not to be multipart it returns ErrNotMultipart and
+	// drops whatever ParseForm made of it — a malformed urlencoded body then
+	// looks like a request that simply carried no fields. Asking again does not
+	// help: ParseForm caches its result and reports no error the second time.
+	if err := c.Request.ParseForm(); err != nil {
+		c.formErr = err
+	}
+	if c.ContentType() == multipartContentType {
+		if err := c.Request.ParseMultipartForm(c.maxMultipartMemory()); err != nil &&
+			!errors.Is(err, http.ErrNotMultipart) {
+			c.formErr = err
 		}
 	}
+
+	// Whatever parsed before a failure is still served; formErr says the rest
+	// is missing.
 	if c.Request.PostForm != nil {
 		c.formCache = c.Request.PostForm
 	}
+}
+
+// FormError reports why parsing the request body failed, or nil.
+//
+// The form accessors cannot return an error — PostForm("name") has nowhere to
+// put one — so a malformed, oversized or truncated body would otherwise look
+// exactly like a request that left every field out. That difference matters:
+// one is a client that sent nothing, the other is a client whose body was
+// rejected, and only the second should be answered with 400 or 413.
+//
+//	name := c.PostForm("name")
+//	if err := c.FormError(); err != nil {
+//		c.AbortWithStatusJSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+//		return
+//	}
+//
+// It reports on the parse the accessors performed, so call it after reading at
+// least one field. binding.Form and binding.Multipart check it for you.
+func (c *Context) FormError() error {
+	c.initFormCache()
+	return c.formErr
 }
 
 // PostForm returns the first form value for key, or "".
@@ -668,10 +710,18 @@ func (c *Context) Data(code int, contentType string, data []byte) {
 	_, _ = c.Writer.Write(data)
 }
 
-// Redirect sends an HTTP redirect. It panics on a status that is not one.
+// Redirect sends an HTTP redirect: a 3xx status and a Location header.
+//
+// It panics on anything outside 300-308. In particular it does not accept 201,
+// which is not a redirect: a created resource is answered with the response
+// body its creator wants, and the Location header set alongside it —
+//
+//	c.Header("Location", "/users/"+id)
+//	c.JSON(http.StatusCreated, user)
+//
+// — rather than through a function whose whole job is to send no body.
 func (c *Context) Redirect(code int, location string) {
-	if (code < http.StatusMultipleChoices || code > http.StatusPermanentRedirect) &&
-		code != http.StatusCreated {
+	if code < http.StatusMultipleChoices || code > http.StatusPermanentRedirect {
 		panic("zarp: cannot redirect with status code " + strconv.Itoa(code))
 	}
 	c.Header("Location", location)
@@ -751,6 +801,12 @@ func releaseBuffer(buf *bytes.Buffer) {
 // net/http does not reuse request objects between requests, so nothing else
 // will write to them. Mutating them from the goroutine is not: the handler's
 // own goroutine may still be running.
+//
+// The copy's context is still the request's, and net/http cancels that when the
+// response is finished. Work that must outlive the response therefore needs a
+// context of its own — context.WithoutCancel, or a fresh one with its own
+// deadline — because a copy is a snapshot of the request, not an extension of
+// its lifetime.
 func (c *Context) Copy() *Context {
 	cp := &Context{
 		Request:  c.Request,

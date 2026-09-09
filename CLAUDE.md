@@ -22,7 +22,7 @@ declined and why — check there before "fixing" something it argues against.
 
 ## Contracts that are easy to get wrong
 
-Four decisions the code depends on, each of which looks like a bug until you know why:
+Five decisions the code depends on, each of which looks like a bug until you know why:
 
 - **Returning from a handler does not stop the chain.** Only `Abort` does. The `Next` loop
   advances past a handler that returns, which is what lets a route handler omit `Next`. Middleware
@@ -35,6 +35,9 @@ Four decisions the code depends on, each of which looks like a bug until you kno
   for a malformed body and 422 for an unacceptable one.
 - **Proxy headers are not trusted by default.** `ForwardedByClientIP` is off, and turning it on
   without `TrustedProxies` means "believe anyone". Do not flip either for convenience in a test.
+- **An Engine is configured, then served.** Route registration and the config fields are read
+  without a lock by `ServeHTTP`, deliberately — a mutex on every lookup would cost every request.
+  Mutating either while serving is a data race, and the fix is never to add the lock.
 
 ## Commands
 

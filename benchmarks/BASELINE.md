@@ -16,6 +16,10 @@ go test -bench='Router|ServeMux|Context' -benchmem -run XXX -count=5 .
 go test -bench=. -benchmem -run XXX -count=5 ./middleware/ ./binding/ ./render/
 ```
 
+**`reset` costs one field more, 2026-09-09.** `Context` gained `formErr`, so `reset` clears one
+extra word: +1.95% on `BenchmarkContextReset` (p=0.029, n=10), no allocation. That is the price of
+telling a malformed request body apart from an absent field, and it is worth paying.
+
 **Rows updated 2026-09-09, with the reason.** `binding.Query` no longer validates — binding and
 validation are separate steps now — so its row measures a bind alone and is labelled that way;
 `Validate` has its own row below. The text sink and the logger each gained a pass over the request

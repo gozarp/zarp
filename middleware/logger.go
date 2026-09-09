@@ -15,11 +15,18 @@ import (
 
 // Entry is one finished request, as the logger middleware sees it.
 type Entry struct {
-	Start    time.Time
-	Latency  time.Duration
-	Method   string
-	Path     string // the matched route pattern, e.g. "/user/:id"
-	URL      string // the requested path, with query string
+	Start   time.Time
+	Latency time.Duration
+	Method  string
+	Path    string // the matched route pattern, e.g. "/user/:id"
+	// URL is the requested path with its query string. It is the raw thing the
+	// client asked for, so it carries whatever they put in it: an access token
+	// a badly designed integration passes as a query parameter, an email
+	// address, a session id, a search term. Prefer Path for ordinary logging —
+	// it is the route pattern, and it cannot carry a value — and reach for URL
+	// only where the exact request matters, knowing it may land in a log
+	// aggregator with a longer retention than any of those things deserve.
+	URL      string
 	Status   int
 	Size     int // response bytes, or -1 if nothing was written
 	ClientIP string

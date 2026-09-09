@@ -1,6 +1,10 @@
 package binding
 
-import "github.com/gozarp/zarp"
+import (
+	"fmt"
+
+	"github.com/gozarp/zarp"
+)
 
 // queryBinding reads the URL query string. It goes through the Context's own
 // accessors so the query is parsed once per request, not once per binder.
@@ -18,6 +22,11 @@ type formBinding struct{}
 func (formBinding) Name() string { return "form" }
 
 func (formBinding) Bind(c *zarp.Context, obj any) error {
+	// Ask the Context to parse first, so a body that failed to parse is an
+	// error here rather than a struct full of zero values.
+	if err := c.FormError(); err != nil {
+		return fmt.Errorf("binding: %w", err)
+	}
 	return mapSource(obj, "form", c.GetPostFormArray)
 }
 
@@ -30,7 +39,10 @@ func (multipartBinding) Name() string { return "multipart" }
 
 func (multipartBinding) Bind(c *zarp.Context, obj any) error {
 	if _, err := c.MultipartForm(); err != nil {
-		return err
+		return fmt.Errorf("binding: %w", err)
+	}
+	if err := c.FormError(); err != nil {
+		return fmt.Errorf("binding: %w", err)
 	}
 	return mapSource(obj, "form", c.GetPostFormArray)
 }
