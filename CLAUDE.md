@@ -16,9 +16,13 @@ middleware chain, static file serving, plus the optional `binding/`, `render/` a
 packages. Clean under `-race`, allocation-free on the paths the benchmarks cover.
 
 Pre-release: the API is not frozen and nothing is tagged. Renaming or resigning an exported symbol
-is still allowed, but it should be a considered change, not a drive-by. [ROADMAP.md](ROADMAP.md)
-carries the hardening plan for the first tag, including the review findings that were deliberately
-declined and why — check there before "fixing" something it argues against.
+is still allowed, but it should be a considered change, not a drive-by.
+
+Several externally-reported "defects" have been checked against the source and deliberately
+declined — the middleware chain's continuation semantics, the deferred `WriteHeader`, `Copy`
+returning a shared request, the unsynchronised router, and `countParams` counting `:`/`*`. The
+reasons are in the contracts below and in the code comments at each site; read those before
+"fixing" one of them.
 
 ## Contracts that are easy to get wrong
 
