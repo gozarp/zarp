@@ -112,6 +112,9 @@ func (e *Engine) rebuildFallbacks() {
 // wants. Build your own http.Server — Engine is an http.Handler — as soon as
 // read/write timeouts or graceful shutdown matter.
 func (e *Engine) Run(addr string) error {
+	// #nosec G114 -- the missing timeouts are the documented point of this
+	// function: it is the two-line convenience, and the doc comment above sends
+	// anyone serving real traffic to their own http.Server.
 	return http.ListenAndServe(addr, e)
 }
 

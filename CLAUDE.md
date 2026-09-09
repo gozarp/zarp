@@ -46,6 +46,8 @@ go build ./...
 go vet ./...
 gofmt -l .                                         # should print nothing
 golangci-lint run ./...                            # config in .golangci.yml
+gosec ./...                                        # CI gates this at 0 issues
+go run golang.org/x/vuln/cmd/govulncheck@latest ./...
 
 go test ./...                                      # unit tests; benchmarks/ has none
 go test -run TestAddRouteLookup .                  # a single test by name
@@ -93,6 +95,9 @@ Three of these are asserted by the workflow rather than left to review:
 - **Core imports none of `binding/`, `render/`, `middleware/`.** The optional packages depend on
   core, never the reverse.
 - **Coverage over `.`, `binding/`, `render/`, `middleware/` stays at or above 90%.**
+- **`gosec` reports no issues, and `govulncheck` no reachable vulnerability.** A deliberate gosec
+  finding needs a `#nosec` comment naming the rule and the reason; there are two, both on
+  `Engine.Run`, whose missing timeouts are the documented point of it.
 
 Two more are asserted by tests:
 

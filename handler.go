@@ -54,7 +54,11 @@ const abortIndex int8 = 63
 // non-calling middleware need no special case.
 func (c *Context) Next() {
 	c.index++
-	for c.index < int8(len(c.handlers)) {
+	// Widen the cursor rather than narrowing the length: int8(len(...)) is a
+	// conversion that would be wrong if a chain ever exceeded 127, and the
+	// registration limit that makes it safe lives in another file. Comparing as
+	// int needs no such argument, and costs nothing.
+	for int(c.index) < len(c.handlers) {
 		c.handlers[c.index](c)
 		c.index++
 	}

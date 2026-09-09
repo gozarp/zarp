@@ -109,11 +109,11 @@ func (d *secureDir) Open(name string) (http.File, error) {
 	target := filepath.Join(d.root, filepath.FromSlash(path.Clean("/"+name)))
 	target, err = filepath.EvalSymlinks(target)
 	if err != nil {
-		f.Close()
+		_ = f.Close()
 		return nil, &fs.PathError{Op: "open", Path: name, Err: err}
 	}
 	if !within(d.root, target) {
-		f.Close()
+		_ = f.Close()
 		// fs.ErrNotExist rather than a distinct error: a 404 tells a prober
 		// nothing about what is on the other side of the link.
 		return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrNotExist}
@@ -149,7 +149,9 @@ func (g *RouterGroup) staticHandler(relativePath string, fs http.FileSystem) Han
 			c.NotFound()
 			return
 		}
-		f.Close()
+		// Opened only to learn whether it exists; net/http opens it again to
+		// serve it.
+		_ = f.Close()
 
 		fileServer.ServeHTTP(c.Writer, c.Request)
 	}

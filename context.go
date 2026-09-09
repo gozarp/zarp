@@ -366,7 +366,8 @@ func (c *Context) FormFile(name string) (*multipart.FileHeader, error) {
 	if err != nil {
 		return nil, err
 	}
-	f.Close()
+	// The header is what the caller wanted; the open file is not.
+	_ = f.Close()
 	return fh, nil
 }
 

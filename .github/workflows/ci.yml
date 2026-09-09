@@ -136,3 +136,35 @@ jobs:
       # catches a benchmark that stops compiling or starts panicking.
       - name: Benchmarks (smoke)
         run: go test -bench=. -benchtime=10x -run XXX ./...
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # gosec reads the code: unchecked errors on security-relevant calls,
+      # narrowing integer conversions, servers started without timeouts. It
+      # runs in its own container, so no Go setup is needed here.
+      #
+      # The findings that are deliberate carry a "#nosec" annotation naming the
+      # rule and the reason, and the run prints how many suppressions it
+      # honoured, so one cannot be added quietly.
+      - name: gosec
+        uses: securego/gosec@v2.29.0
+        with:
+          args: ./...
+
+      # govulncheck reads the dependency graph, which for this module is the
+      # standard library and nothing else — so what it actually watches for is
+      # a Go release fixing a vulnerability in a package zarp calls, and it
+      # reports only the ones reachable from this code.
+      #
+      # It installs its own Go and would check the repository out again;
+      # neither is wanted, and caching has nothing to cache without a go.sum.
+      - name: govulncheck
+        uses: golang/govulncheck-action@v1.1.0
+        with:
+          go-version-input: '1.25'
+          go-package: ./...
+          repo-checkout: false
+          cache: false

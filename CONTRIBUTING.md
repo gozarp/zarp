@@ -33,6 +33,7 @@ needed to reproduce the CI checks locally:
 ```sh
 go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.11.3
 go install golang.org/x/perf/cmd/benchstat@latest
+go install github.com/securego/gosec/v2/cmd/gosec@latest
 ```
 
 ## The checks
@@ -46,7 +47,16 @@ golangci-lint run ./...                            # config in .golangci.yml
 go test ./...
 go test -race ./...
 go test -cover . ./binding ./render ./middleware   # must stay at or above 90%
+
+gosec ./...                                        # must report 0 issues
+go run golang.org/x/vuln/cmd/govulncheck@latest ./...
 ```
+
+CI runs both scanners. `gosec` reads the code for insecure patterns;
+`govulncheck` reads the dependency graph, which here is the standard library
+alone — so in practice it watches for a Go release that fixes something zarp
+calls. Suppressing a gosec finding means a `#nosec` comment naming the rule and
+saying why, and the run prints how many suppressions it honoured.
 
 On Windows, ThreadSanitizer often fails to start (`ThreadSanitizer failed to allocate ... error
 code: 87`). Run the race detector under Linux; CI's race job is the authoritative one:
@@ -127,7 +137,7 @@ and under about 70 characters, and use the body to explain why rather than what.
 Before opening a pull request:
 
 - [ ] `go build ./... && go vet ./... && gofmt -l .` (the last prints nothing)
-- [ ] `golangci-lint run ./...` is clean
+- [ ] `golangci-lint run ./...` is clean, and `gosec ./...` reports 0 issues
 - [ ] `go test ./...` and `go test -race ./...` pass
 - [ ] coverage stayed at or above 90%
 - [ ] `benchstat` comparison included for any change to the router, context or chain
