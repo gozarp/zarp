@@ -219,7 +219,7 @@ func writeText(out io.Writer, e Entry) {
 	b = append(b, " | "...)
 	b = appendPadded(b, e.Method, 7)
 	b = append(b, ' ')
-	b = append(b, e.Path...)
+	b = appendEscaped(b, e.Path)
 	b = append(b, '\n')
 
 	_, _ = out.Write(b)

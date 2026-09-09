@@ -7,6 +7,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"strconv"
 	"strings"
 	"testing"
@@ -322,12 +323,96 @@ func TestClientIP(t *testing.T) {
 	}
 }
 
-func TestClientIPDefaultsToTrusting(t *testing.T) {
-	c, _ := ctxFor("GET", "/", "")
+func TestClientIPIgnoresForwardedHeadersByDefault(t *testing.T) {
+	c, _ := ctxFor(http.MethodGet, "/", "")
 	c.Request.RemoteAddr = "10.0.0.1:80"
 	c.Request.Header.Set("X-Forwarded-For", "203.0.113.5")
-	if got := c.ClientIP(); got != "203.0.113.5" {
-		t.Errorf("ClientIP without an engine = %q, want the forwarded address", got)
+
+	// No engine at all, and an engine straight out of New, must both refuse to
+	// let the caller name itself.
+	if got := c.ClientIP(); got != "10.0.0.1" {
+		t.Errorf("ClientIP without an engine = %q, want the peer address", got)
+	}
+	c.engine = New()
+	if got := c.ClientIP(); got != "10.0.0.1" {
+		t.Errorf("ClientIP with default config = %q, want the peer address", got)
+	}
+}
+
+func TestClientIPWithTrustedProxies(t *testing.T) {
+	proxies := []netip.Prefix{
+		netip.MustParsePrefix("10.0.0.0/8"),
+		netip.MustParsePrefix("::1/128"),
+	}
+	tests := []struct {
+		name   string
+		remote string
+		xff    string
+		xreal  string
+		want   string
+	}{
+		{
+			name:   "peer is not a trusted proxy, so its headers are input",
+			remote: "203.0.113.9:443", xff: "198.51.100.1",
+			want: "203.0.113.9",
+		},
+		{
+			name:   "single proxy hop",
+			remote: "10.0.0.1:80", xff: "203.0.113.5",
+			want: "203.0.113.5",
+		},
+		{
+			name:   "walks past our own hops, right to left",
+			remote: "10.0.0.1:80", xff: "203.0.113.5, 10.1.2.3, 10.0.0.1",
+			want: "203.0.113.5",
+		},
+		{
+			name:   "a spoofed prefix cannot reach past the first untrusted hop",
+			remote: "10.0.0.1:80", xff: "1.1.1.1, 203.0.113.5, 10.0.0.1",
+			want: "203.0.113.5",
+		},
+		{
+			name:   "every hop trusted falls back to the leftmost",
+			remote: "10.0.0.1:80", xff: "10.9.9.9, 10.0.0.1",
+			want: "10.9.9.9",
+		},
+		{
+			name:   "junk entries are skipped",
+			remote: "10.0.0.1:80", xff: "203.0.113.7, not-an-ip, 10.0.0.1",
+			want: "203.0.113.7",
+		},
+		{
+			name:   "X-Real-Ip is used when there is no chain",
+			remote: "10.0.0.1:80", xreal: "203.0.113.9",
+			want: "203.0.113.9",
+		},
+		{
+			name:   "no usable header falls back to the peer",
+			remote: "10.0.0.1:80", xff: "not-an-ip",
+			want: "10.0.0.1",
+		},
+		{
+			name:   "IPv4-mapped peer still matches a v4 prefix",
+			remote: "[::ffff:10.0.0.1]:80", xff: "203.0.113.5",
+			want: "203.0.113.5",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			c, _ := ctxFor(http.MethodGet, "/", "")
+			c.engine = &Engine{ForwardedByClientIP: true, TrustedProxies: proxies}
+			c.Request.RemoteAddr = tc.remote
+			if tc.xff != "" {
+				c.Request.Header.Set("X-Forwarded-For", tc.xff)
+			}
+			if tc.xreal != "" {
+				c.Request.Header.Set("X-Real-Ip", tc.xreal)
+			}
+			if got := c.ClientIP(); got != tc.want {
+				t.Errorf("ClientIP = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
 
@@ -622,3 +707,19 @@ func BenchmarkContextString(b *testing.B) {
 }
 
 var sinkString string
+
+func TestResponseWriterUnwrap(t *testing.T) {
+	rec := httptest.NewRecorder()
+	c := &Context{}
+	c.reset(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+
+	if got := c.Writer.Unwrap(); got != http.ResponseWriter(rec) {
+		t.Errorf("Unwrap returned %T, want the writer net/http handed us", got)
+	}
+
+	// The point of Unwrap: http.NewResponseController can find the real writer
+	// through the wrapper, so deadlines and flushing work.
+	if err := http.NewResponseController(c.Writer).Flush(); err != nil {
+		t.Errorf("ResponseController.Flush through the wrapper: %v", err)
+	}
+}

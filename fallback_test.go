@@ -257,3 +257,108 @@ func TestRunServesRequests(t *testing.T) {
 		t.Errorf("body = %q", buf[:n])
 	}
 }
+
+func TestContextNotFoundRunsNoRoute(t *testing.T) {
+	e := New()
+	e.NoRoute(func(c *Context) {
+		c.Text(http.StatusNotFound, "custom 404")
+	})
+	e.GET("/users/:id", func(c *Context) {
+		if c.Param("id") != "1" {
+			c.NotFound()
+			return
+		}
+		c.Text(http.StatusOK, "user 1")
+	})
+
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/users/2", nil))
+	if rec.Code != http.StatusNotFound || rec.Body.String() != "custom 404" {
+		t.Errorf("code = %d, body = %q, want the app's own 404", rec.Code, rec.Body.String())
+	}
+
+	rec = httptest.NewRecorder()
+	e.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/users/1", nil))
+	if rec.Code != http.StatusOK || rec.Body.String() != "user 1" {
+		t.Errorf("code = %d, body = %q, want the route's own answer", rec.Code, rec.Body.String())
+	}
+}
+
+func TestContextNotFoundRunsGroupMiddleware(t *testing.T) {
+	var sawMiddleware bool
+	e := New()
+	e.Use(func(c *Context) {
+		sawMiddleware = true
+		c.Next()
+	})
+	e.GET("/x", func(c *Context) { c.NotFound() })
+
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/x", nil))
+
+	if !sawMiddleware {
+		t.Error("root middleware did not run")
+	}
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("code = %d, want 404", rec.Code)
+	}
+}
+
+func TestContextNotFoundWithoutEngine(t *testing.T) {
+	// A Context built by hand — in a unit test, say — must not panic.
+	rec := httptest.NewRecorder()
+	c := &Context{}
+	c.reset(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+	c.NotFound()
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("code = %d, want 404", rec.Code)
+	}
+	if !c.IsAborted() {
+		t.Error("chain not aborted")
+	}
+}
+
+func TestContextNotFoundMatchesTheRoutersOwn404(t *testing.T) {
+	// With no NoRoute handler configured, a handler's NotFound must produce the
+	// same response an unmatched path does — status and default body alike.
+	e := New()
+	e.GET("/x", func(c *Context) { c.NotFound() })
+
+	fromHandler := httptest.NewRecorder()
+	e.ServeHTTP(fromHandler, httptest.NewRequest(http.MethodGet, "/x", nil))
+
+	fromRouter := httptest.NewRecorder()
+	e.ServeHTTP(fromRouter, httptest.NewRequest(http.MethodGet, "/nothing-here", nil))
+
+	if fromHandler.Code != fromRouter.Code || fromHandler.Body.String() != fromRouter.Body.String() {
+		t.Errorf("handler 404 = %d %q, router 404 = %d %q",
+			fromHandler.Code, fromHandler.Body.String(),
+			fromRouter.Code, fromRouter.Body.String())
+	}
+	if fromHandler.Header().Get("Content-Type") != fromRouter.Header().Get("Content-Type") {
+		t.Errorf("content types differ: %q vs %q",
+			fromHandler.Header().Get("Content-Type"), fromRouter.Header().Get("Content-Type"))
+	}
+}
+
+func TestContextNotFoundInsideNoRouteDoesNotRecurse(t *testing.T) {
+	calls := 0
+	e := New()
+	e.NoRoute(func(c *Context) {
+		calls++
+		// A fallback handler asking for the fallback again must terminate.
+		c.NotFound()
+	})
+	e.GET("/x", func(c *Context) { c.NotFound() })
+
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/x", nil))
+
+	if calls != 1 {
+		t.Errorf("NoRoute ran %d times, want 1", calls)
+	}
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("code = %d, want 404", rec.Code)
+	}
+}

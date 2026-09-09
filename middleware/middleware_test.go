@@ -2,6 +2,7 @@ package middleware_test
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -371,7 +372,7 @@ func TestRequestIDIsUniquePerRequest(t *testing.T) {
 func TestRequestIDReusesInbound(t *testing.T) {
 	var seen string
 	e := zarp.New()
-	e.Use(middleware.RequestID())
+	e.Use(middleware.RequestIDWithConfig(middleware.RequestIDConfig{TrustInbound: true}))
 	e.GET("/x", func(c *zarp.Context) { seen = middleware.GetRequestID(c) })
 
 	rec := httptest.NewRecorder()
@@ -394,7 +395,7 @@ func TestRequestIDRejectsJunkInbound(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			var seen string
 			e := zarp.New()
-			e.Use(middleware.RequestID())
+			e.Use(middleware.RequestIDWithConfig(middleware.RequestIDConfig{TrustInbound: true}))
 			e.GET("/x", func(c *zarp.Context) { seen = middleware.GetRequestID(c) })
 
 			rec := httptest.NewRecorder()
@@ -413,10 +414,10 @@ func TestRequestIDRejectsJunkInbound(t *testing.T) {
 }
 
 func TestRequestIDUntrustedInbound(t *testing.T) {
-	no := false
 	var seen string
 	e := zarp.New()
-	e.Use(middleware.RequestIDWithConfig(middleware.RequestIDConfig{TrustInbound: &no}))
+	// The zero config is the untrusting one: an inbound id is client input.
+	e.Use(middleware.RequestID())
 	e.GET("/x", func(c *zarp.Context) { seen = middleware.GetRequestID(c) })
 
 	rec := httptest.NewRecorder()
@@ -425,7 +426,72 @@ func TestRequestIDUntrustedInbound(t *testing.T) {
 	e.ServeHTTP(rec, req)
 
 	if seen == "from-client" {
-		t.Error("inbound id used while TrustInbound is false")
+		t.Error("inbound id used by default: TrustInbound must be opt-in")
+	}
+	if len(seen) != 32 {
+		t.Errorf("id = %q, want a freshly generated one", seen)
+	}
+}
+
+func TestRequestIDAcceptsCommonTraceFormats(t *testing.T) {
+	ids := []string{
+		"0af7651916cd43dd8448eb211c80319c",     // W3C trace id
+		"550e8400-e29b-41d4-a716-446655440000", // UUID
+		"01ARZ3NDEKTSV4RRFFQ69G5FAV",           // ULID
+		"projects_1:trace.7",                   // punctuation we allow
+	}
+	for _, id := range ids {
+		t.Run(id, func(t *testing.T) {
+			var seen string
+			e := zarp.New()
+			e.Use(middleware.RequestIDWithConfig(middleware.RequestIDConfig{TrustInbound: true}))
+			e.GET("/x", func(c *zarp.Context) { seen = middleware.GetRequestID(c) })
+
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodGet, "/x", nil)
+			req.Header.Set(middleware.RequestIDHeader, id)
+			e.ServeHTTP(rec, req)
+
+			if seen != id {
+				t.Errorf("id = %q, want the inbound %q", seen, id)
+			}
+		})
+	}
+}
+
+func TestCORSRejectsMalformedOrigins(t *testing.T) {
+	bad := map[string]string{
+		"trailing slash": "https://example.com/",
+		"no scheme":      "example.com",
+		"path":           "https://example.com/app",
+		"query":          "https://example.com?a=1",
+		"null":           "null",
+		"userinfo":       "https://user@example.com",
+		"uppercase host": "https://Example.com",
+	}
+	for name, origin := range bad {
+		t.Run(name, func(t *testing.T) {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("origin %q was accepted", origin)
+				}
+			}()
+			middleware.CORSWithConfig(middleware.CORSConfig{AllowOrigins: []string{origin}})
+		})
+	}
+}
+
+func TestCORSAcceptsWellFormedOrigins(t *testing.T) {
+	ok := []string{"https://example.com", "http://localhost:3000", "https://a.b.example.com:8443"}
+	for _, origin := range ok {
+		t.Run(origin, func(t *testing.T) {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Errorf("origin %q was rejected: %v", origin, r)
+				}
+			}()
+			middleware.CORSWithConfig(middleware.CORSConfig{AllowOrigins: []string{origin}})
+		})
 	}
 }
 
@@ -619,4 +685,120 @@ func BenchmarkRequestID(b *testing.B) {
 	e.Use(middleware.RequestID())
 	e.GET("/user/:id", func(c *zarp.Context) { c.Text(http.StatusOK, "ok") })
 	benchServe(b, e, "GET", "/user/42")
+}
+
+// ---------------------------------------------------------------- max body size
+
+func TestMaxBodySizeCapsEveryReader(t *testing.T) {
+	var readErr error
+	e := zarp.New()
+	e.Use(middleware.MaxBodySize(16))
+	e.POST("/x", func(c *zarp.Context) {
+		_, readErr = io.ReadAll(c.Request.Body)
+	})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/x", strings.NewReader(strings.Repeat("a", 64)))
+	e.ServeHTTP(rec, req)
+
+	var maxErr *http.MaxBytesError
+	if !errors.As(readErr, &maxErr) {
+		t.Fatalf("read error = %v, want *http.MaxBytesError", readErr)
+	}
+	if maxErr.Limit != 16 {
+		t.Errorf("limit = %d, want 16", maxErr.Limit)
+	}
+}
+
+func TestMaxBodySizeLetsSmallBodiesThrough(t *testing.T) {
+	var body string
+	e := zarp.New()
+	e.Use(middleware.MaxBodySize(16))
+	e.POST("/x", func(c *zarp.Context) {
+		b, err := io.ReadAll(c.Request.Body)
+		if err != nil {
+			t.Errorf("read: %v", err)
+		}
+		body = string(b)
+	})
+
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/x", strings.NewReader("small")))
+
+	if body != "small" {
+		t.Errorf("body = %q", body)
+	}
+}
+
+// ---------------------------------------------------------------- timeout
+
+func TestTimeoutSetsADeadline(t *testing.T) {
+	var (
+		deadlineOK bool
+		remaining  time.Duration
+	)
+	e := zarp.New()
+	e.Use(middleware.Timeout(time.Minute))
+	e.GET("/x", func(c *zarp.Context) {
+		var dl time.Time
+		dl, deadlineOK = c.Deadline()
+		remaining = time.Until(dl)
+	})
+
+	e.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/x", nil))
+
+	if !deadlineOK {
+		t.Fatal("handler saw no deadline")
+	}
+	if remaining <= 0 || remaining > time.Minute {
+		t.Errorf("remaining = %v, want a value inside the minute", remaining)
+	}
+}
+
+func TestTimeoutExpiresAndCancelsOnReturn(t *testing.T) {
+	var (
+		expired   error
+		afterDone <-chan struct{}
+	)
+	e := zarp.New()
+	e.Use(middleware.Timeout(time.Millisecond))
+	e.GET("/x", func(c *zarp.Context) {
+		<-c.Done()
+		expired = c.Err()
+		afterDone = c.Done()
+	})
+
+	e.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/x", nil))
+
+	if !errors.Is(expired, context.DeadlineExceeded) {
+		t.Errorf("Err = %v, want DeadlineExceeded", expired)
+	}
+	select {
+	case <-afterDone:
+	default:
+		t.Error("context still live after the chain returned")
+	}
+}
+
+func TestLoggerEscapesControlCharactersInPath(t *testing.T) {
+	// An unmatched route has no pattern, so the logger falls back to the
+	// requested path — which net/http hands us URL-decoded, so %0A in the
+	// request line arrives as a real newline. Written raw, that forges log
+	// lines.
+	var buf bytes.Buffer
+	e := zarp.New()
+	e.Use(middleware.LoggerWith(middleware.TextSink(&buf)))
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/x", nil)
+	req.URL.Path = "/a\n[zarp] 2026/01/01 00:00:00 | 200 |  0s | 1.2.3.4 | GET     /admin"
+	e.ServeHTTP(rec, req)
+
+	line := buf.String()
+	if strings.Count(line, "\n") != 1 {
+		t.Errorf("log entry spans %d lines, want 1:\n%s", strings.Count(line, "\n"), line)
+	}
+	if !strings.Contains(line, `\n`) {
+		t.Errorf("newline was not escaped: %q", line)
+	}
 }

@@ -1,7 +1,10 @@
 package middleware
 
 import (
+	"errors"
+	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -13,6 +16,12 @@ import (
 type CORSConfig struct {
 	// AllowOrigins lists the origins allowed to read responses. A single "*"
 	// allows any origin, which cannot be combined with AllowCredentials.
+	//
+	// An entry is an origin, not a URL: scheme and host, optionally a port, and
+	// nothing else. "https://app.example.com" matches; "https://app.example.com/"
+	// never can, because a browser never sends a trailing slash in Origin, so a
+	// malformed entry is rejected at construction rather than silently ignored
+	// for the life of the process.
 	AllowOrigins []string
 
 	// AllowOriginFunc decides per request, for cases a list cannot express.
@@ -55,6 +64,9 @@ func CORSWithConfig(cfg CORSConfig) zarp.HandlerFunc {
 		if o == "*" {
 			allowAll = true
 			continue
+		}
+		if err := checkOrigin(o); err != nil {
+			panic("zarp: CORS " + err.Error())
 		}
 		origins = append(origins, o)
 	}
@@ -149,6 +161,39 @@ func CORSWithConfig(cfg CORSConfig) zarp.HandlerFunc {
 		// A preflight is answered here and never reaches a route.
 		c.AbortWithStatus(http.StatusNoContent)
 	}
+}
+
+// checkOrigin rejects anything a browser could never send in an Origin header,
+// because such an entry can only ever fail to match.
+func checkOrigin(origin string) error {
+	if origin == "null" {
+		return errors.New(`cannot allow the "null" origin: it is sent by sandboxed ` +
+			"documents of any provenance, so it identifies nothing — use AllowOriginFunc " +
+			"if you really mean to accept it")
+	}
+
+	u, err := url.Parse(origin)
+	if err != nil {
+		return fmt.Errorf("origin %q is not parseable: %w", origin, err)
+	}
+	switch {
+	case u.Scheme == "":
+		return fmt.Errorf("origin %q has no scheme, e.g. https://%s", origin, origin)
+	case u.Host == "":
+		return fmt.Errorf("origin %q has no host", origin)
+	case u.Path != "":
+		return fmt.Errorf("origin %q has a path: an Origin header carries scheme and host only", origin)
+	case u.RawQuery != "" || u.Fragment != "":
+		return fmt.Errorf("origin %q has a query or fragment: an Origin header carries scheme and host only", origin)
+	case u.User != nil:
+		return fmt.Errorf("origin %q has userinfo: an Origin header carries scheme and host only", origin)
+	case u.Host != strings.ToLower(u.Host):
+		// A browser serialises the origin lowercased, so a configured
+		// "https://Example.com" is a rule that can never fire.
+		return fmt.Errorf("origin %q must be lowercase: browsers send %q",
+			origin, u.Scheme+"://"+strings.ToLower(u.Host))
+	}
+	return nil
 }
 
 func isPreflight(c *zarp.Context) bool {

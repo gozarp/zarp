@@ -11,6 +11,7 @@
 package main
 
 import (
+	"errors"
 	"log"
 	"net/http"
 	"sync"
@@ -28,8 +29,8 @@ type User struct {
 	Role  string `json:"role"`
 }
 
-// createUser is the request body. The binding tags are the validation rules;
-// they are checked for you by binding.JSON.
+// createUser is the request body. The binding tags are the validation rules,
+// checked by binding.Validate after the body has been decoded.
 type createUser struct {
 	Name  string `json:"name"  binding:"required,min=2,max=64"`
 	Email string `json:"email" binding:"required,email"`
@@ -65,7 +66,7 @@ func main() {
 func (s *store) list(c *zarp.Context) {
 	var q listQuery
 	if err := binding.Query(c, &q); err != nil {
-		badRequest(c, err)
+		bindingFailed(c, err)
 		return
 	}
 
@@ -88,9 +89,15 @@ func (s *store) list(c *zarp.Context) {
 
 func (s *store) create(c *zarp.Context) {
 	var in createUser
-	// binding.JSON decodes and validates; a failure names every bad field.
+	// Decoding and validating are separate steps, so the response can say which
+	// one failed: a body that is not JSON is not the same problem as a body that
+	// is JSON but names an unknown role.
 	if err := binding.JSON(c, &in); err != nil {
-		badRequest(c, err)
+		bindingFailed(c, err)
+		return
+	}
+	if err := binding.Validate(in); err != nil {
+		bindingFailed(c, err)
 		return
 	}
 
@@ -105,7 +112,7 @@ func (s *store) get(c *zarp.Context) {
 		ID int `uri:"id" binding:"required,min=1"`
 	}
 	if err := binding.URI(c, &params); err != nil {
-		badRequest(c, err)
+		bindingFailed(c, err)
 		return
 	}
 
@@ -122,7 +129,7 @@ func (s *store) remove(c *zarp.Context) {
 		ID int `uri:"id" binding:"required,min=1"`
 	}
 	if err := binding.URI(c, &params); err != nil {
-		badRequest(c, err)
+		bindingFailed(c, err)
 		return
 	}
 
@@ -133,8 +140,25 @@ func (s *store) remove(c *zarp.Context) {
 	c.Status(http.StatusNoContent)
 }
 
-func badRequest(c *zarp.Context, err error) {
-	c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+// bindingFailed maps the three ways a request body can be wrong onto the three
+// statuses that mean them: 415 for a media type we do not read, 422 for a
+// well-formed body whose values are unacceptable, and 400 for everything else.
+func bindingFailed(c *zarp.Context, err error) {
+	var invalid binding.ValidationErrors
+	switch {
+	case errors.Is(err, binding.ErrUnsupportedMediaType):
+		c.JSON(http.StatusUnsupportedMediaType, map[string]string{"error": err.Error()})
+
+	case errors.As(err, &invalid):
+		fields := make([]map[string]string, len(invalid))
+		for i, fe := range invalid {
+			fields[i] = map[string]string{"field": fe.Field, "rule": fe.Rule, "message": fe.Msg}
+		}
+		c.JSON(http.StatusUnprocessableEntity, map[string]any{"errors": fields})
+
+	default:
+		c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
 }
 
 // ---------------------------------------------------------------- store

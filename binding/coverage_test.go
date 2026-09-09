@@ -195,15 +195,14 @@ func TestBindTargetMustPointToStruct(t *testing.T) {
 // ---------------------------------------------------------------- json
 
 func TestJSONUseNumber(t *testing.T) {
-	binding.EnableDecoderUseNumber = true
-	defer func() { binding.EnableDecoderUseNumber = false }()
+	numbers := binding.JSONWith(binding.JSONConfig{UseNumber: true})
 
 	var got struct {
 		N any `json:"n"`
 	}
 	var err error
 	e := zarp.New()
-	e.POST("/x", func(c *zarp.Context) { err = binding.JSON(c, &got) })
+	e.POST("/x", func(c *zarp.Context) { err = binding.With(c, &got, numbers) })
 
 	req := httptest.NewRequest(http.MethodPost, "/x", strings.NewReader(`{"n":10000000000000000001}`))
 	req.Header.Set("Content-Type", binding.MIMEJSON)
@@ -371,5 +370,122 @@ func TestDefaultBindingOnHeadAndOptions(t *testing.T) {
 	}
 	if got := binding.Default(http.MethodOptions, "").Name(); got != "query" {
 		t.Errorf("OPTIONS -> %s", got)
+	}
+}
+
+func TestBoundsOnFloatAndOtherKinds(t *testing.T) {
+	type sample struct {
+		Ratio float64 `form:"ratio" binding:"min=0.5,max=1.5"`
+	}
+
+	if err := binding.Validate(sample{Ratio: 1.0}); err != nil {
+		t.Errorf("in-range float rejected: %v", err)
+	}
+	if err := binding.Validate(sample{Ratio: 0.25}); err == nil {
+		t.Error("float below min accepted")
+	}
+	if err := binding.Validate(sample{Ratio: 2.5}); err == nil {
+		t.Error("float above max accepted")
+	}
+}
+
+func TestBoundsOnAnUnmeasurableKind(t *testing.T) {
+	// A bound on a bool is a mistake in the tag, and the message should say so
+	// rather than inventing a zero to compare against.
+	type odd struct {
+		Enabled bool `form:"enabled" binding:"min=1"`
+	}
+
+	err := binding.Validate(odd{Enabled: true})
+	if err == nil {
+		t.Fatal("a bound on a bool passed silently")
+	}
+	if !strings.Contains(err.Error(), "does not apply to bool") {
+		t.Errorf("err = %v, want it to say the rule does not apply", err)
+	}
+}
+
+func TestBoundsWithUnparseableParam(t *testing.T) {
+	type broken struct {
+		S string  `form:"s" binding:"min=abc"`
+		I int     `form:"i" binding:"max=abc"`
+		U uint    `form:"u" binding:"min=abc"`
+		F float64 `form:"f" binding:"len=abc"`
+	}
+
+	err := binding.Validate(broken{S: "x", I: 1, U: 1, F: 1})
+	var invalid binding.ValidationErrors
+	if !errors.As(err, &invalid) {
+		t.Fatalf("err = %v, want ValidationErrors", err)
+	}
+	if len(invalid) != 4 {
+		t.Errorf("got %d errors, want one per field: %v", len(invalid), invalid)
+	}
+	for _, fe := range invalid {
+		if !strings.Contains(fe.Msg, "invalid rule") {
+			t.Errorf("%s: msg = %q, want it to name the bad rule", fe.Field, fe.Msg)
+		}
+	}
+}
+
+func TestUnsupportedMediaTypeMessages(t *testing.T) {
+	withType := &binding.UnsupportedMediaTypeError{ContentType: "application/xml"}
+	if !strings.Contains(withType.Error(), `"application/xml"`) {
+		t.Errorf("Error = %q, want it to quote the type", withType.Error())
+	}
+
+	none := &binding.UnsupportedMediaTypeError{}
+	if !strings.Contains(none.Error(), "no Content-Type") {
+		t.Errorf("Error = %q, want it to say the header was missing", none.Error())
+	}
+	if !errors.Is(none, binding.ErrUnsupportedMediaType) {
+		t.Error("an empty-type error must still match ErrUnsupportedMediaType")
+	}
+}
+
+func TestBindAndValidateStopsAtBindFailure(t *testing.T) {
+	type req struct {
+		Name string `json:"name" binding:"required"`
+	}
+	var got req
+	var err error
+
+	e := zarp.New()
+	e.POST("/x", func(c *zarp.Context) { err = binding.BindAndValidate(c, &got) })
+
+	body := strings.NewReader(`{"name":`)
+	rec := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/x", body)
+	r.Header.Set("Content-Type", binding.MIMEJSON)
+	e.ServeHTTP(rec, r)
+
+	// A malformed body is a bind failure, not a validation failure: the caller
+	// needs to tell 400 from 422.
+	var invalid binding.ValidationErrors
+	if err == nil || errors.As(err, &invalid) {
+		t.Errorf("err = %v, want a decode error rather than ValidationErrors", err)
+	}
+}
+
+func TestBindAndValidateAcceptsAGoodRequest(t *testing.T) {
+	type req struct {
+		Name string `json:"name" binding:"required,min=2"`
+	}
+	var got req
+	var err error
+
+	e := zarp.New()
+	e.POST("/x", func(c *zarp.Context) { err = binding.BindAndValidate(c, &got) })
+
+	rec := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/x", strings.NewReader(`{"name":"octocat"}`))
+	r.Header.Set("Content-Type", binding.MIMEJSON)
+	e.ServeHTTP(rec, r)
+
+	if err != nil {
+		t.Fatalf("valid request rejected: %v", err)
+	}
+	if got.Name != "octocat" {
+		t.Errorf("name = %q", got.Name)
 	}
 }

@@ -16,10 +16,18 @@
 //
 // Bind picks a binder from the request method and Content-Type, which is what
 // most handlers want.
+//
+// Binding and validation are separate steps. Every function here parses and
+// nothing more; BindAndValidate runs the `binding` tag rules afterwards, and
+// Validate can be called on its own for a value assembled by hand. Keeping them
+// apart means a handler that only wants a decode can have one, and that a
+// validation failure is distinguishable from a malformed body.
 package binding
 
 import (
+	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/gozarp/zarp"
@@ -37,7 +45,7 @@ type Binding interface {
 // The available bindings. Bind and the shorthand functions below cover the
 // common cases; these are exported for handlers that need to choose at runtime.
 var (
-	JSONBinding      Binding = jsonBinding{}
+	JSONBinding      Binding = JSONWith(JSONConfig{})
 	QueryBinding     Binding = queryBinding{}
 	FormBinding      Binding = formBinding{}
 	MultipartBinding Binding = multipartBinding{}
@@ -54,6 +62,12 @@ const (
 
 // Default returns the binding implied by an HTTP method and Content-Type.
 // Requests without a body bind from the query string.
+//
+// An unrecognised Content-Type yields a binder that fails with
+// UnsupportedMediaTypeError rather than one that guesses. Guessing turns a
+// request a server cannot handle into one it appears to handle badly: the
+// client gets a JSON syntax error for a body that was never JSON, and the 415
+// that would have told it what was wrong never happens.
 func Default(method, contentType string) Binding {
 	switch method {
 	case http.MethodGet, http.MethodHead, http.MethodDelete, http.MethodOptions:
@@ -71,24 +85,71 @@ func Default(method, contentType string) Binding {
 	case MIMEPOSTForm:
 		return FormBinding
 	default:
-		// An unknown body type is more usefully reported by the JSON decoder
-		// than guessed at.
-		return JSONBinding
+		return unsupportedBinding{contentType: contentType}
 	}
 }
 
+// ErrUnsupportedMediaType matches every UnsupportedMediaTypeError, so a handler
+// can map one to 415 without naming the type:
+//
+//	if errors.Is(err, binding.ErrUnsupportedMediaType) {
+//		c.AbortWithStatus(http.StatusUnsupportedMediaType)
+//		return
+//	}
+var ErrUnsupportedMediaType = errors.New("binding: unsupported media type")
+
+// UnsupportedMediaTypeError reports a Content-Type no binder handles. It
+// carries the offending type, and matches ErrUnsupportedMediaType under
+// errors.Is.
+type UnsupportedMediaTypeError struct {
+	ContentType string
+}
+
+func (e *UnsupportedMediaTypeError) Error() string {
+	if e.ContentType == "" {
+		return "binding: no Content-Type on a request with a body"
+	}
+	return "binding: unsupported media type " + strconv.Quote(e.ContentType)
+}
+
+func (e *UnsupportedMediaTypeError) Unwrap() error { return ErrUnsupportedMediaType }
+
+// unsupportedBinding is what Default returns for a Content-Type it does not
+// recognise: a binder that always fails, so the decision surfaces at Bind
+// rather than as a nil Binding the caller has to check for.
+type unsupportedBinding struct{ contentType string }
+
+func (unsupportedBinding) Name() string { return "unsupported" }
+
+func (b unsupportedBinding) Bind(*zarp.Context, any) error {
+	return &UnsupportedMediaTypeError{ContentType: strings.TrimSpace(b.contentType)}
+}
+
 // Bind parses the request into obj using the binding implied by its method and
-// Content-Type, then validates obj.
+// Content-Type. It does not validate; see BindAndValidate.
 func Bind(c *zarp.Context, obj any) error {
 	return With(c, obj, Default(c.Request.Method, c.ContentType()))
 }
 
-// With parses the request into obj using b, then validates obj.
-func With(c *zarp.Context, obj any, b Binding) error {
-	if err := b.Bind(c, obj); err != nil {
+// BindAndValidate parses the request into obj as Bind does, then checks obj
+// against its `binding` tags.
+//
+// A ValidationErrors is worth answering with 422 and a field-by-field body; the
+// binding failures before it are 400, 413 or 415. Distinguishing them is the
+// reason the two steps are separate:
+//
+//	var errs binding.ValidationErrors
+//	if errors.As(err, &errs) { ... }
+func BindAndValidate(c *zarp.Context, obj any) error {
+	if err := Bind(c, obj); err != nil {
 		return err
 	}
 	return Validate(obj)
+}
+
+// With parses the request into obj using b. It does not validate.
+func With(c *zarp.Context, obj any, b Binding) error {
+	return b.Bind(c, obj)
 }
 
 // JSON parses a JSON body into obj.

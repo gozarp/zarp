@@ -85,13 +85,11 @@ func TestJSONMalformed(t *testing.T) {
 }
 
 func TestJSONBodyCap(t *testing.T) {
-	old := binding.MaxBodyBytes
-	binding.MaxBodyBytes = 32
-	defer func() { binding.MaxBodyBytes = old }()
+	small := binding.JSONWith(binding.JSONConfig{MaxBodyBytes: 32})
 
 	var got user
 	_, err := run(t, "POST", "/u/1", `{"name":"`+strings.Repeat("x", 200)+`"}`, binding.MIMEJSON,
-		func(c *zarp.Context) error { return binding.JSON(c, &got) })
+		func(c *zarp.Context) error { return binding.With(c, &got, small) })
 
 	if err == nil || !strings.Contains(err.Error(), "exceeds") {
 		t.Errorf("err = %v, want a body-size error", err)
@@ -99,12 +97,11 @@ func TestJSONBodyCap(t *testing.T) {
 }
 
 func TestJSONDisallowUnknownFields(t *testing.T) {
-	binding.EnableDecoderDisallowUnknownFields = true
-	defer func() { binding.EnableDecoderDisallowUnknownFields = false }()
+	strict := binding.JSONWith(binding.JSONConfig{DisallowUnknownFields: true})
 
 	var got user
 	_, err := run(t, "POST", "/u/1", `{"name":"x","nope":1}`, binding.MIMEJSON,
-		func(c *zarp.Context) error { return binding.JSON(c, &got) })
+		func(c *zarp.Context) error { return binding.With(c, &got, strict) })
 
 	if err == nil || !strings.Contains(err.Error(), "nope") {
 		t.Errorf("err = %v, want it to name the unknown field", err)
@@ -130,7 +127,7 @@ func TestQuery(t *testing.T) {
 	var got search
 	target := "/u/1?q=go&page=2&tag=a&tag=b&ratio=1.5&live=true&timeout=3s&limit=10&ByName=named"
 	_, err := run(t, "GET", target, "", "",
-		func(c *zarp.Context) error { return binding.Query(c, &got) })
+		func(c *zarp.Context) error { return bindAndValidateQuery(c, &got) })
 
 	if err != nil {
 		t.Fatalf("bind: %v", err)
@@ -159,7 +156,7 @@ func TestQuery(t *testing.T) {
 func TestQuerySkipsDashTag(t *testing.T) {
 	var got search
 	_, err := run(t, "GET", "/u/1?-=nope&Skipped=nope", "", "",
-		func(c *zarp.Context) error { return binding.Query(c, &got) })
+		func(c *zarp.Context) error { return bindAndValidateQuery(c, &got) })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -171,7 +168,7 @@ func TestQuerySkipsDashTag(t *testing.T) {
 func TestQueryBadValue(t *testing.T) {
 	var got search
 	_, err := run(t, "GET", "/u/1?page=abc", "", "",
-		func(c *zarp.Context) error { return binding.Query(c, &got) })
+		func(c *zarp.Context) error { return bindAndValidateQuery(c, &got) })
 
 	if err == nil || !strings.Contains(err.Error(), "Page") {
 		t.Errorf("err = %v, want it to name the field", err)
@@ -281,7 +278,8 @@ func TestDefault(t *testing.T) {
 		{"POST", "application/json; charset=utf-8", "json"},
 		{"PUT", binding.MIMEPOSTForm, "form"},
 		{"POST", "multipart/form-data; boundary=x", "multipart"},
-		{"POST", "text/plain", "json"},
+		{"POST", "text/plain", "unsupported"},
+		{"POST", "", "unsupported"},
 	}
 	for _, tc := range tests {
 		if got := binding.Default(tc.method, tc.contentType).Name(); got != tc.want {
@@ -321,6 +319,15 @@ type account struct {
 	Note  string `form:"note"` // no rules
 }
 
+// bindAndValidateQuery is the two explicit steps the package now asks for:
+// binding no longer validates on its own.
+func bindAndValidateQuery(c *zarp.Context, obj any) error {
+	if err := binding.Query(c, obj); err != nil {
+		return err
+	}
+	return binding.Validate(obj)
+}
+
 func valid() string {
 	return "name=octo&email=o@example.com&role=admin&age=30&code=abcd"
 }
@@ -328,27 +335,29 @@ func valid() string {
 func TestValidateAccepts(t *testing.T) {
 	var got account
 	_, err := run(t, "GET", "/u/1?"+valid(), "", "",
-		func(c *zarp.Context) error { return binding.Query(c, &got) })
+		func(c *zarp.Context) error { return bindAndValidateQuery(c, &got) })
 	if err != nil {
 		t.Fatalf("valid input rejected: %v", err)
 	}
 }
 
 func TestValidateRules(t *testing.T) {
+	// The field names are the ones the client used — the form tags — not the Go
+	// identifiers behind them.
 	tests := []struct{ name, query, wantField string }{
-		{"required", "email=o@example.com&role=admin&age=30&code=abcd", "Name"},
-		{"min length", "name=o&email=o@example.com&role=admin&age=30&code=abcd", "Name"},
-		{"max length", "name=octocatlong&email=o@example.com&role=admin&age=30&code=abcd", "Name"},
-		{"email shape", "name=octo&email=nope&role=admin&age=30&code=abcd", "Email"},
-		{"oneof", "name=octo&email=o@example.com&role=root&age=30&code=abcd", "Role"},
-		{"min value", "name=octo&email=o@example.com&role=admin&age=9&code=abcd", "Age"},
-		{"exact len", "name=octo&email=o@example.com&role=admin&age=30&code=ab", "Code"},
+		{"required", "email=o@example.com&role=admin&age=30&code=abcd", "name"},
+		{"min length", "name=o&email=o@example.com&role=admin&age=30&code=abcd", "name"},
+		{"max length", "name=octocatlong&email=o@example.com&role=admin&age=30&code=abcd", "name"},
+		{"email shape", "name=octo&email=nope&role=admin&age=30&code=abcd", "email"},
+		{"oneof", "name=octo&email=o@example.com&role=root&age=30&code=abcd", "role"},
+		{"min value", "name=octo&email=o@example.com&role=admin&age=9&code=abcd", "age"},
+		{"exact len", "name=octo&email=o@example.com&role=admin&age=30&code=ab", "code"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			var got account
 			_, err := run(t, "GET", "/u/1?"+tc.query, "", "",
-				func(c *zarp.Context) error { return binding.Query(c, &got) })
+				func(c *zarp.Context) error { return bindAndValidateQuery(c, &got) })
 
 			if err == nil {
 				t.Fatalf("want a validation error naming %s", tc.wantField)
@@ -363,7 +372,7 @@ func TestValidateRules(t *testing.T) {
 func TestValidateReportsEveryFailure(t *testing.T) {
 	var got account
 	_, err := run(t, "GET", "/u/1?name=o&email=nope&role=root&age=1&code=x", "", "",
-		func(c *zarp.Context) error { return binding.Query(c, &got) })
+		func(c *zarp.Context) error { return bindAndValidateQuery(c, &got) })
 
 	var errs binding.ValidationErrors
 	if !errors.As(err, &errs) {
@@ -381,7 +390,7 @@ func TestValidateOptionalFieldsSkipRules(t *testing.T) {
 	}
 	var got optional
 	_, err := run(t, "GET", "/u/1", "", "",
-		func(c *zarp.Context) error { return binding.Query(c, &got) })
+		func(c *zarp.Context) error { return bindAndValidateQuery(c, &got) })
 	if err != nil {
 		t.Errorf("absent optional field failed its bound: %v", err)
 	}
@@ -397,9 +406,9 @@ func TestValidateNestedStruct(t *testing.T) {
 	}
 	var got outer
 	_, err := run(t, "GET", "/u/1?name=x", "", "",
-		func(c *zarp.Context) error { return binding.Query(c, &got) })
+		func(c *zarp.Context) error { return bindAndValidateQuery(c, &got) })
 
-	if err == nil || !strings.Contains(err.Error(), "Code") {
+	if err == nil || !strings.Contains(err.Error(), "code") {
 		t.Errorf("err = %v, want the nested field reported", err)
 	}
 }
@@ -410,7 +419,7 @@ func TestValidateUnknownRule(t *testing.T) {
 	}
 	var got bad
 	_, err := run(t, "GET", "/u/1?x=1", "", "",
-		func(c *zarp.Context) error { return binding.Query(c, &got) })
+		func(c *zarp.Context) error { return bindAndValidateQuery(c, &got) })
 
 	if err == nil || !strings.Contains(err.Error(), "unknown rule") {
 		t.Errorf("err = %v, want an unknown-rule complaint", err)
@@ -428,7 +437,7 @@ func TestEmailShapes(t *testing.T) {
 	for _, addr := range ok {
 		var got e
 		_, err := run(t, "GET", "/u/1?addr="+url.QueryEscape(addr), "", "",
-			func(c *zarp.Context) error { return binding.Query(c, &got) })
+			func(c *zarp.Context) error { return bindAndValidateQuery(c, &got) })
 		if err != nil {
 			t.Errorf("%q rejected: %v", addr, err)
 		}
@@ -436,7 +445,7 @@ func TestEmailShapes(t *testing.T) {
 	for _, addr := range bad {
 		var got e
 		_, err := run(t, "GET", "/u/1?addr="+url.QueryEscape(addr), "", "",
-			func(c *zarp.Context) error { return binding.Query(c, &got) })
+			func(c *zarp.Context) error { return bindAndValidateQuery(c, &got) })
 		if err == nil {
 			t.Errorf("%q accepted", addr)
 		}
@@ -465,6 +474,173 @@ func BenchmarkValidate(b *testing.B) {
 	for b.Loop() {
 		if err := binding.Validate(&a); err != nil {
 			b.Fatal(err)
+		}
+	}
+}
+
+// ---------------------------------------------------------------- one body, one document
+
+func TestJSONRejectsTrailingContent(t *testing.T) {
+	bodies := map[string]string{
+		"second object": `{"name":"alice"} {"name":"mallory"}`,
+		"second array":  `{"name":"alice"} [1,2]`,
+		"garbage":       `{"name":"alice"} not-json`,
+		"repeated":      `{"name":"alice"}{"name":"mallory"}`,
+	}
+	for name, body := range bodies {
+		t.Run(name, func(t *testing.T) {
+			var got user
+			_, err := run(t, "POST", "/u/1", body, binding.MIMEJSON,
+				func(c *zarp.Context) error { return binding.JSON(c, &got) })
+
+			if !errors.Is(err, binding.ErrTrailingContent) {
+				t.Errorf("err = %v, want ErrTrailingContent", err)
+			}
+		})
+	}
+}
+
+func TestJSONAcceptsSurroundingWhitespace(t *testing.T) {
+	var got user
+	_, err := run(t, "POST", "/u/1", "  {\"name\":\"alice\"}\n\n", binding.MIMEJSON,
+		func(c *zarp.Context) error { return binding.JSON(c, &got) })
+
+	if err != nil {
+		t.Fatalf("whitespace around a single value must bind: %v", err)
+	}
+	if got.Name != "alice" {
+		t.Errorf("name = %q", got.Name)
+	}
+}
+
+// ---------------------------------------------------------------- media types
+
+func TestUnsupportedMediaType(t *testing.T) {
+	var got user
+	_, err := run(t, "POST", "/u/1", "<user/>", "application/xml",
+		func(c *zarp.Context) error { return binding.Bind(c, &got) })
+
+	if !errors.Is(err, binding.ErrUnsupportedMediaType) {
+		t.Fatalf("err = %v, want ErrUnsupportedMediaType", err)
+	}
+	var typed *binding.UnsupportedMediaTypeError
+	if !errors.As(err, &typed) {
+		t.Fatalf("err = %v, want an *UnsupportedMediaTypeError", err)
+	}
+	if typed.ContentType != "application/xml" {
+		t.Errorf("ContentType = %q", typed.ContentType)
+	}
+	// The message has to name the type, or a 415 tells the client nothing.
+	if !strings.Contains(err.Error(), "application/xml") {
+		t.Errorf("err = %v, want it to name the media type", err)
+	}
+}
+
+func TestUnsupportedMediaTypeWithoutContentType(t *testing.T) {
+	var got user
+	_, err := run(t, "POST", "/u/1", "whatever", "",
+		func(c *zarp.Context) error { return binding.Bind(c, &got) })
+
+	if !errors.Is(err, binding.ErrUnsupportedMediaType) {
+		t.Errorf("err = %v, want ErrUnsupportedMediaType", err)
+	}
+}
+
+// ---------------------------------------------------------------- bind and validate
+
+func TestBindDoesNotValidate(t *testing.T) {
+	// name is below its min and role is not in the oneof set, yet binding alone
+	// must succeed: validation is the caller's separate, explicit step.
+	var got account
+	_, err := run(t, "GET", "/u/1?name=x&role=root", "", "",
+		func(c *zarp.Context) error { return binding.Query(c, &got) })
+
+	if err != nil {
+		t.Fatalf("bind reported a validation failure: %v", err)
+	}
+	if got.Name != "x" {
+		t.Errorf("name = %q, want the value to have been bound anyway", got.Name)
+	}
+	if err := binding.Validate(got); err == nil {
+		t.Error("Validate accepted the same value the rules forbid")
+	}
+}
+
+func TestBindAndValidateRunsBoth(t *testing.T) {
+	var got account
+	_, err := run(t, "GET", "/u/1?name=x&role=root", "", "",
+		func(c *zarp.Context) error { return binding.BindAndValidate(c, &got) })
+
+	var invalid binding.ValidationErrors
+	if !errors.As(err, &invalid) {
+		t.Fatalf("err = %v, want ValidationErrors", err)
+	}
+	if len(invalid) == 0 {
+		t.Error("no field errors reported")
+	}
+}
+
+// ---------------------------------------------------------------- numeric bounds
+
+func TestBoundsBeyondFloat64Precision(t *testing.T) {
+	// The bound is 2^53, the last integer before float64 starts skipping them.
+	// 2^53+1 rounds to 2^53 as a float64, so comparing through float64 finds the
+	// two equal and lets an over-bound value through; comparing as int64 does
+	// not. This is the case that separates the two implementations.
+	type big struct {
+		N int64 `form:"n" binding:"max=9007199254740992"`
+	}
+
+	atLimit := big{N: 9007199254740992}
+	if err := binding.Validate(atLimit); err != nil {
+		t.Errorf("value equal to the bound rejected: %v", err)
+	}
+
+	over := big{N: 9007199254740993}
+	if err := binding.Validate(over); err == nil {
+		t.Error("value above the bound accepted: it was rounded onto the bound")
+	}
+}
+
+func TestBoundsOnUnsignedFields(t *testing.T) {
+	type counts struct {
+		Big      uint64 `form:"big"  binding:"min=18446744073709551615"`
+		Negative uint8  `form:"neg"  binding:"min=-1"`
+	}
+
+	// The largest uint64 there is, as its own minimum.
+	ok := counts{Big: 18446744073709551615, Negative: 0}
+	if err := binding.Validate(ok); err != nil {
+		t.Errorf("uint64 max rejected by its own bound: %v", err)
+	}
+
+	low := counts{Big: 1, Negative: 0}
+	if err := binding.Validate(low); err == nil {
+		t.Error("value below a uint64 bound accepted")
+	}
+}
+
+func TestFieldErrorNamesFollowTheRequest(t *testing.T) {
+	type req struct {
+		JSONName string `json:"json_name" binding:"required"`
+		FormName string `form:"form_name" binding:"required"`
+		URIName  string `uri:"uri_name"   binding:"required"`
+		Untagged string `binding:"required"`
+	}
+
+	err := binding.Validate(req{})
+	var invalid binding.ValidationErrors
+	if !errors.As(err, &invalid) {
+		t.Fatalf("err = %v, want ValidationErrors", err)
+	}
+
+	got := make(map[string]bool, len(invalid))
+	for _, fe := range invalid {
+		got[fe.Field] = true
+	}
+	for _, want := range []string{"json_name", "form_name", "uri_name", "Untagged"} {
+		if !got[want] {
+			t.Errorf("no error named %q; got %v", want, invalid)
 		}
 	}
 }

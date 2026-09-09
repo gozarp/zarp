@@ -16,8 +16,8 @@
   <img alt="Status: pre-alpha" src="https://img.shields.io/badge/status-pre--alpha-orange">
 </p>
 
-🪶 No third-party dependencies in any package. 🚫 No reflection, no maps, and no allocations on
-the request path.
+🪶 No third-party dependencies in any package. 🚫 No reflection and no map lookups in the router,
+and a request that routes, runs its chain and writes a response allocates nothing.
 
 ```go
 r := zarp.New()
@@ -27,9 +27,10 @@ r.GET("/users/:id", func(c *zarp.Context) {
 r.Run(":8080")
 ```
 
-> 🚧 **Status: pre-alpha.** Everything documented here is built, tested and benchmarked — 229
-> tests, clean under `-race`, allocation-free end to end. The API is not yet frozen and there is
-> no tagged release, so pin a commit if you depend on it today.
+> 🚧 **Status: pre-alpha.** Everything documented here is built, tested and benchmarked — 263
+> tests, clean under `-race`, 96% covered, and allocation-free on the paths below. The API is not
+> yet frozen and there is no tagged release, so pin a commit if you depend on it today; the
+> remaining work before a tag is in [ROADMAP.md](ROADMAP.md).
 
 ---
 
@@ -62,7 +63,9 @@ func main() {
         c.JSON(200, User{ID: c.Param("id")})
     })
 
-    r.Run(":8080") // or build your own http.Server — Engine is an http.Handler
+    // Run is for development: it leaves every timeout at its zero value. In
+    // production build your own http.Server — Engine is an http.Handler.
+    r.Run(":8080")
 }
 
 func authMiddleware(c *zarp.Context) {
@@ -140,9 +143,16 @@ roughly an order of magnitude cheaper*, not as a claim about whole requests. The
 is the one to judge zarp by.
 
 Middleware costs **~2.8 ns per hop** and allocates nothing (51.9 ns with none, 78.4 ns with ten).
-The pooled context resets in **3.9 ns**. The one core path that allocates is 405 responses, which
-walk the other method trees to build the `Allow` header — which is why `HandleMethodNotAllowed`
-is off by default.
+The pooled context resets in **3.9 ns**.
+
+**What "allocation-free" covers.** Routing, the context pool, the middleware chain, param lookup
+and writing a response: the paths in the tables above. It is not a claim about every method on
+`Context`. `Query()` and `Set()` each allocate a map the first time they are called on a request —
+`url.Values` and the key store — and are free afterwards. `binding/` and `render/` allocate by
+design, which is why they are optional imports and why their costs are listed separately in
+[BASELINE.md](benchmarks/BASELINE.md). In core, 405 responses are the one path that allocates: they
+walk the other method trees to build the `Allow` header, which is why `HandleMethodNotAllowed` is
+off by default.
 
 ```sh
 go test -bench=. -benchmem -run XXX -count=5 ./benchmarks/       # end to end
@@ -162,7 +172,8 @@ go test -bench='Router|ServeMux|Context' -benchmem -run XXX .    # micro-benchma
   `Redirect`)
 - Route groups with prefix and middleware nesting; `GET`/`POST`/`PUT`/`PATCH`/`DELETE`/`HEAD`/
   `OPTIONS`/`Any`/`Handle`
-- `NoRoute` and `NoMethod` fallbacks, `Static`, `StaticFS`, `StaticFile`, and `Run`
+- `NoRoute` and `NoMethod` fallbacks, reachable from a handler with `c.NotFound()`
+- `Static`, `StaticFS`, `StaticFile`, and `SecureDir` for a root symlinks cannot escape
 
 **Optional packages** (import only what you use)
 
@@ -170,7 +181,7 @@ go test -bench='Router|ServeMux|Context' -benchmem -run XXX .    # micro-benchma
 |---|---|
 | [binding/](binding/) | JSON, query, form, multipart, URI and header binders; opt-in struct-tag validation |
 | [render/](render/) | JSON, indented JSON, XML, HTML, text and redirect renderers |
-| [middleware/](middleware/) | `Logger`, `Recovery`, `CORS`, `RequestID` |
+| [middleware/](middleware/) | `Logger`, `Recovery`, `CORS`, `RequestID`, `MaxBodySize`, `Timeout` |
 
 The request logger writes plain text to stderr and depends on no logging library. Any logger
 plugs in through `Sink`, a single-method interface:
@@ -276,6 +287,7 @@ zarp/
 ├── examples/                  five runnable apps
 ├── benchmarks/                end-to-end perf suite plus BASELINE.md
 ├── CONTRIBUTING.md            how to work on it
+├── ROADMAP.md                 hardening plan for the first tag
 └── CLAUDE.md                  design constraints and conventions
 ```
 
@@ -305,6 +317,29 @@ code: 87`). Run the race detector under Linux instead:
 ```sh
 MSYS_NO_PATHCONV=1 docker run --rm -v "$(pwd -W)":/src -w /src golang:1.25 go test -race ./...
 ```
+
+---
+
+## 🔒 Security defaults
+
+Defaults are a security posture, so zarp's are the conservative ones. Each of these is a decision
+you can reverse deliberately, and none of them is reversed for you:
+
+| Default | Why |
+|---|---|
+| `ClientIP()` returns `RemoteAddr`; `X-Forwarded-For` and `X-Real-Ip` are ignored | Those headers are written by whoever connects. Set `ForwardedByClientIP` and list your `TrustedProxies` — the chain is then walked from the right, past hops you own, so a client cannot forge one |
+| `RequestID` generates its own id and ignores an inbound one | An inbound id is an attacker-chosen string that ends up in every log line for the request. Set `TrustInbound` behind a gateway that sets the header itself |
+| JSON binding caps the body at 4 MB and rejects a second document after the first | An uncapped decode is a memory-exhaustion vector, and `{"a":1} {"b":2}` is a request two parsers can disagree about |
+| An unrecognised `Content-Type` fails with `ErrUnsupportedMediaType` | Guessing JSON turns a 415 into a confusing 400 |
+| `CORS` rejects a wildcard origin with credentials, and malformed origins, at construction | Both are configuration that cannot do what it appears to |
+| `HandleMethodNotAllowed` is off | It probes every other method tree on a miss, and allocates to build `Allow` |
+
+`middleware.MaxBodySize` bounds every body, not only the ones a binder reads, and
+`middleware.Timeout` puts a deadline on the request context.
+
+**One thing to internalise:** a middleware that returns without calling `c.Abort()` does **not**
+stop the chain — the next handler still runs. Use `c.AbortWithStatusJSON(401, …)` and then return.
+This is documented on `HandlerFunc`, and it is the mistake most likely to become a security bug.
 
 ---
 

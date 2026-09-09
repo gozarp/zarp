@@ -23,9 +23,12 @@ type RequestIDConfig struct {
 	Generator func() string
 
 	// TrustInbound reuses a client-supplied id, so a trace spans services.
-	// Defaults to true; turn it off at the edge, where the value is attacker
-	// controlled and only useful for confusing your own logs.
-	TrustInbound *bool
+	//
+	// Off by default. An inbound id is chosen by whoever made the request: at
+	// the edge it is an attacker-controlled string that will be written into
+	// every log line for that request and correlated across your systems. Turn
+	// it on behind a gateway that sets the header itself.
+	TrustInbound bool
 }
 
 // RequestID returns middleware that gives every request an id, stores it on the
@@ -44,14 +47,9 @@ func RequestIDWithConfig(cfg RequestIDConfig) zarp.HandlerFunc {
 	if generate == nil {
 		generate = newRequestID
 	}
-	trustInbound := true
-	if cfg.TrustInbound != nil {
-		trustInbound = *cfg.TrustInbound
-	}
-
 	return func(c *zarp.Context) {
 		id := ""
-		if trustInbound {
+		if cfg.TrustInbound {
 			id = c.GetHeader(header)
 			if !validRequestID(id) {
 				id = ""
@@ -82,15 +80,23 @@ func newRequestID() string {
 	return hex.EncodeToString(b[:])
 }
 
-// validRequestID rejects an inbound value that is empty, over-long, or carries
-// anything but printable ASCII. It is echoed into a response header, so control
-// characters in it are a header-injection bug waiting to happen.
+// validRequestID accepts [A-Za-z0-9._:-]{1,128} and nothing else.
+//
+// The value is echoed into a response header and written into logs, so the
+// grammar is deliberately narrower than "printable ASCII": rejecting control
+// characters stops header injection, and rejecting quotes, spaces and brackets
+// stops a caller forging fields in a structured log line. Every id format worth
+// correlating — UUID, W3C trace id, ULID, this package's own hex — fits.
 func validRequestID(id string) bool {
 	if id == "" || len(id) > 128 {
 		return false
 	}
 	for i := range len(id) {
-		if c := id[i]; c < 0x20 || c > 0x7e {
+		c := id[i]
+		switch {
+		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9':
+		case c == '.', c == '_', c == ':', c == '-':
+		default:
 			return false
 		}
 	}

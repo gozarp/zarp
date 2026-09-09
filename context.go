@@ -11,6 +11,7 @@ import (
 	"mime/multipart"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"strconv"
 	"strings"
@@ -34,6 +35,12 @@ const (
 // Flusher and Hijacker are part of the interface rather than an optional
 // assertion, because streaming responses and protocol upgrades break silently
 // when a wrapper forgets to forward them.
+//
+// Unwrap returns the writer net/http handed us. It is what
+// http.NewResponseController looks for, so read and write deadlines work
+// through this wrapper, and it is what to pass to a net/http function that
+// needs to talk to the real response — http.MaxBytesReader, which signals the
+// server through a method only net/http's own writer has.
 type ResponseWriter interface {
 	http.ResponseWriter
 	http.Flusher
@@ -42,6 +49,7 @@ type ResponseWriter interface {
 	Size() int
 	Written() bool
 	WriteHeaderNow()
+	Unwrap() http.ResponseWriter
 }
 
 // responseWriter wraps the http.ResponseWriter handed to ServeHTTP and records
@@ -96,6 +104,10 @@ func (w *responseWriter) WriteString(s string) (n int, err error) {
 	w.size += n
 	return
 }
+
+// Unwrap returns the underlying writer, for http.NewResponseController and for
+// net/http helpers that type-assert on the concrete response.
+func (w *responseWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 
 func (w *responseWriter) Status() int   { return w.status }
 func (w *responseWriter) Size() int     { return w.size }
@@ -462,17 +474,41 @@ func (c *Context) IsWebsocket() bool {
 		strings.EqualFold(c.requestHeader("Upgrade"), "websocket")
 }
 
-// ClientIP returns the client's address, consulting the usual proxy headers
-// first when the engine is configured to trust them.
+// ClientIP returns the client's network address.
+//
+// By default that is the peer address from RemoteAddr, and the X-Forwarded-For
+// and X-Real-Ip headers are ignored: they are set by whoever connects, so
+// believing them on a directly reachable server lets a caller choose its own
+// identity for your rate limits, allowlists and audit logs.
+//
+// Set Engine.ForwardedByClientIP when the server is only ever reached through a
+// proxy, and list the proxies in Engine.TrustedProxies so the headers are
+// believed only when the peer is one of them.
 func (c *Context) ClientIP() string {
-	if c.trustForwardedFor() {
-		if ip := firstValidIP(c.requestHeader("X-Forwarded-For")); ip != "" {
-			return ip
-		}
-		if ip := firstValidIP(c.requestHeader("X-Real-Ip")); ip != "" {
-			return ip
-		}
+	remote := c.remoteIP()
+	if !c.trustForwardedFor() {
+		return remote
 	}
+
+	trusted := c.trustedProxies()
+	if len(trusted) > 0 && !containsIP(trusted, remote) {
+		// The peer is not a proxy we configured, so its headers are ordinary
+		// user input.
+		return remote
+	}
+
+	if ip := forwardedFor(c.requestHeader("X-Forwarded-For"), trusted); ip != "" {
+		return ip
+	}
+	if ip := firstValidIP(c.requestHeader("X-Real-Ip")); ip != "" {
+		return ip
+	}
+	return remote
+}
+
+// remoteIP is the peer address with any port removed. It is the one address in
+// a request that a client cannot choose for itself.
+func (c *Context) remoteIP() string {
 	if c.Request == nil {
 		return ""
 	}
@@ -483,13 +519,55 @@ func (c *Context) ClientIP() string {
 	return addr
 }
 
-// trustForwardedFor defaults to true without an Engine, matching the flag's
+// trustForwardedFor defaults to false without an Engine, matching the flag's
 // default in New.
 func (c *Context) trustForwardedFor() bool {
-	if c.engine != nil {
-		return c.engine.ForwardedByClientIP
+	return c.engine != nil && c.engine.ForwardedByClientIP
+}
+
+func (c *Context) trustedProxies() []netip.Prefix {
+	if c.engine == nil {
+		return nil
 	}
-	return true
+	return c.engine.TrustedProxies
+}
+
+// forwardedFor picks the client out of an X-Forwarded-For chain.
+//
+// With trusted proxies configured it walks right to left — from the hop that
+// talked to us towards the origin — and returns the first address that is not
+// one of ours: everything to the left of that is written by a machine we have
+// no reason to believe. With no proxies configured the caller has said the
+// headers are trustworthy, so the leftmost address is taken at face value.
+func forwardedFor(header string, trusted []netip.Prefix) string {
+	if header == "" {
+		return ""
+	}
+	if len(trusted) == 0 {
+		return firstValidIP(header)
+	}
+
+	leftmost := ""
+	for rest := header; len(rest) > 0; {
+		var part string
+		if i := strings.LastIndexByte(rest, ','); i >= 0 {
+			part, rest = rest[i+1:], rest[:i]
+		} else {
+			part, rest = rest, ""
+		}
+
+		ip := strings.TrimSpace(part)
+		if !validIP(ip) {
+			continue
+		}
+		leftmost = ip
+		if !containsIP(trusted, ip) {
+			return ip
+		}
+	}
+	// Every hop was a proxy of ours, so the leftmost is as far back as the
+	// chain goes.
+	return leftmost
 }
 
 // firstValidIP returns the first parseable address in a comma-separated header.
@@ -501,11 +579,33 @@ func firstValidIP(header string) string {
 		} else {
 			part, header = header, ""
 		}
-		if ip := strings.TrimSpace(part); net.ParseIP(ip) != nil {
+		if ip := strings.TrimSpace(part); validIP(ip) {
 			return ip
 		}
 	}
 	return ""
+}
+
+func validIP(s string) bool {
+	_, err := netip.ParseAddr(s)
+	return err == nil
+}
+
+// containsIP reports whether s parses and falls inside any of the prefixes.
+// IPv4-mapped IPv6 addresses are unmapped first, so a v4 prefix matches the
+// v4-mapped form a dual-stack listener reports.
+func containsIP(prefixes []netip.Prefix, s string) bool {
+	addr, err := netip.ParseAddr(s)
+	if err != nil {
+		return false
+	}
+	addr = addr.Unmap().WithZone("")
+	for _, p := range prefixes {
+		if p.Contains(addr) {
+			return true
+		}
+	}
+	return false
 }
 
 // ---------------------------------------------------------------- response
@@ -629,11 +729,28 @@ func releaseBuffer(buf *bytes.Buffer) {
 
 // ---------------------------------------------------------------- copy
 
-// Copy returns a detached Context safe to use after the handler returns, in a
-// goroutine say. The original goes back to the pool and will be overwritten by
-// another request, so anything outliving the handler must use a copy.
+// Copy returns a Context whose metadata outlives the handler, for work that
+// continues in a goroutine. The original goes back to the pool the moment the
+// handler returns and is overwritten by the next request, so anything reading
+// it later must read a copy instead.
 //
-// The copy cannot write a response: its Writer is nil and its chain is spent.
+// What is detached: the params and the key/value store are copied, so the
+// original can be reset without disturbing them. The copy cannot write a
+// response — its Writer is nil and its chain is spent — which is deliberate:
+// the response is finished by the time the copy is used.
+//
+// What is not detached is Request. It is the same *http.Request, and net/http
+// closes its Body once the handler returns, so a goroutine holding a copy must
+// not read the body:
+//
+//	body, _ := io.ReadAll(c.Request.Body) // read it here, in the handler
+//	cp := c.Copy()
+//	go audit(cp, body)                    // not in there
+//
+// Reading the request's method, URL, headers and context from a copy is fine —
+// net/http does not reuse request objects between requests, so nothing else
+// will write to them. Mutating them from the goroutine is not: the handler's
+// own goroutine may still be running.
 func (c *Context) Copy() *Context {
 	cp := &Context{
 		Request:  c.Request,

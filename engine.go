@@ -2,6 +2,7 @@ package zarp
 
 import (
 	"net/http"
+	"net/netip"
 	"strings"
 	"sync"
 )
@@ -42,9 +43,25 @@ type Engine struct {
 	// other tree on each miss.
 	HandleMethodNotAllowed bool
 
-	// ForwardedByClientIP lets Context.ClientIP trust X-Forwarded-For and
-	// X-Real-Ip. Turn it off when the server is exposed directly.
+	// ForwardedByClientIP lets Context.ClientIP read X-Forwarded-For and
+	// X-Real-Ip. It is off by default: those headers are written by whoever
+	// connects, so a directly reachable server that believes them lets a client
+	// pick the address your logs, rate limits and allowlists will record. Turn
+	// it on only when the server is unreachable except through a proxy.
 	ForwardedByClientIP bool
+
+	// TrustedProxies lists the peers whose forwarding headers are believed.
+	// When it is set, ClientIP ignores those headers unless RemoteAddr falls
+	// inside one of the prefixes, and walks X-Forwarded-For from the right,
+	// skipping hops that are themselves listed here.
+	//
+	//	e.ForwardedByClientIP = true
+	//	e.TrustedProxies = []netip.Prefix{netip.MustParsePrefix("10.0.0.0/8")}
+	//
+	// Leaving it empty with ForwardedByClientIP on means "believe the headers
+	// from anyone", which is only correct when nothing can reach the server
+	// except a proxy that overwrites them.
+	TrustedProxies []netip.Prefix
 
 	// MaxMultipartMemory caps how much of a multipart body is buffered in
 	// memory before spilling to temporary files.
@@ -60,7 +77,6 @@ func New() *Engine {
 	e := &Engine{
 		RouterGroup:           RouterGroup{basePath: "/", root: true},
 		RedirectTrailingSlash: true,
-		ForwardedByClientIP:   true,
 		MaxMultipartMemory:    defaultMultipartMemory,
 	}
 	e.engine = e

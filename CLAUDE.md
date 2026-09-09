@@ -13,10 +13,28 @@ CI asserts this, so adding one is a deliberate, breaking decision, not a conveni
 
 The framework is complete and tested: radix router, pooled `Context`, `Engine`, route groups,
 middleware chain, static file serving, plus the optional `binding/`, `render/` and `middleware/`
-packages. 229 tests, clean under `-race`, allocation-free end to end.
+packages. Clean under `-race`, allocation-free on the paths the benchmarks cover.
 
 Pre-release: the API is not frozen and nothing is tagged. Renaming or resigning an exported symbol
-is still allowed, but it should be a considered change, not a drive-by.
+is still allowed, but it should be a considered change, not a drive-by. [ROADMAP.md](ROADMAP.md)
+carries the hardening plan for the first tag, including the review findings that were deliberately
+declined and why — check there before "fixing" something it argues against.
+
+## Contracts that are easy to get wrong
+
+Four decisions the code depends on, each of which looks like a bug until you know why:
+
+- **Returning from a handler does not stop the chain.** Only `Abort` does. The `Next` loop
+  advances past a handler that returns, which is what lets a route handler omit `Next`. Middleware
+  that writes a 401 must call `Abort` or the request continues to the route handler.
+- **`WriteHeader` records the status without sending it.** `WriteHeaderNow`, the first write, or a
+  flush sends it. That is what lets a later handler change a status an earlier one set, and what
+  lets a logger report a status it never set.
+- **Binding does not validate.** `binding.JSON` and friends parse; `binding.Validate` checks the
+  `binding` tags; `BindAndValidate` does both. Keeping them apart is what lets a handler answer 400
+  for a malformed body and 422 for an unacceptable one.
+- **Proxy headers are not trusted by default.** `ForwardedByClientIP` is off, and turning it on
+  without `TrustedProxies` means "believe anyone". Do not flip either for convenience in a test.
 
 ## Commands
 
@@ -95,7 +113,7 @@ zarp/
 ├── internal/bytesconv/ unsafe []byte<->string helpers, not exported outside the module
 ├── binding/            request parsing and validation (optional import)
 ├── render/             response rendering (optional import)
-├── middleware/         logger, recovery, cors, requestid
+├── middleware/         logger, recovery, cors, requestid, maxbody, timeout
 ├── examples/           runnable example apps
 ├── benchmarks/         end-to-end perf suite plus BASELINE.md, run explicitly via -bench
 └── *_test.go           unit tests colocated with source at root

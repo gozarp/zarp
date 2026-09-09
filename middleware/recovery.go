@@ -40,7 +40,7 @@ func RecoveryWithWriter(out io.Writer) zarp.HandlerFunc {
 	return RecoveryWithHandler(func(c *zarp.Context, err any) {
 		if out != nil {
 			fmt.Fprintf(out, "[zarp] panic recovered: %s %s\n%v\n%s\n",
-				c.Request.Method, c.Request.URL.Path, err, debug.Stack())
+				c.Request.Method, escaped(c.Request.URL.Path), err, debug.Stack())
 		}
 		c.AbortWithStatus(http.StatusInternalServerError)
 	})

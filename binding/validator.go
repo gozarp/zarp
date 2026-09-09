@@ -1,6 +1,7 @@
 package binding
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
 	"strconv"
@@ -24,7 +25,11 @@ import (
 
 // FieldError is one field failing one rule.
 type FieldError struct {
-	Field string // the struct field's name
+	// Field names the field as the request did: the `json`, `form`, `uri` or
+	// `header` tag it was bound from, falling back to the Go field name only
+	// when there is no tag. A client that sent "user_name" is told about
+	// "user_name", not about a Go identifier it has never seen.
+	Field string
 	Rule  string // the rule that failed, e.g. "min=2"
 	Msg   string
 }
@@ -135,14 +140,14 @@ func fieldsOf(t reflect.Type) []field {
 			ft = ft.Elem()
 		}
 		if ft.Kind() == reflect.Struct && isPlainStruct(ft) && tag == "" {
-			fields = append(fields, field{index: i, name: sf.Name, nested: true})
+			fields = append(fields, field{index: i, name: fieldName(sf), nested: true})
 			continue
 		}
 		if tag == "" {
 			continue
 		}
 
-		f := field{index: i, name: sf.Name}
+		f := field{index: i, name: fieldName(sf)}
 		for _, clause := range strings.Split(tag, ",") {
 			clause = strings.TrimSpace(clause)
 			if clause == "" {
@@ -156,6 +161,22 @@ func fieldsOf(t reflect.Type) []field {
 
 	tagCache.Store(t, fields)
 	return fields
+}
+
+// fieldName is what the client called this field. The binders read `json`,
+// `form`, `uri` and `header` tags, so an error message should use the same
+// name; the Go identifier is the last resort, not the first choice.
+func fieldName(sf reflect.StructField) string {
+	for _, key := range [...]string{"json", "form", "uri", "header"} {
+		tag := sf.Tag.Get(key)
+		if tag == "" || tag == "-" {
+			continue
+		}
+		if name, _, _ := strings.Cut(tag, ","); name != "" {
+			return name
+		}
+	}
+	return sf.Name
 }
 
 // ---------------------------------------------------------------- rules
@@ -178,30 +199,39 @@ func (r rule) check(fieldName string, v reflect.Value) *FieldError {
 		}
 
 	case "min":
-		n, err := strconv.ParseFloat(r.param, 64)
+		cmp, kind, got, err := compare(v, r.param)
+		if errors.Is(err, errUnmeasurable) {
+			return fail("min does not apply to %s", deref(v).Kind())
+		}
 		if err != nil {
 			return fail("invalid rule %q", r.raw)
 		}
-		if got, kind := measure(v); got < n {
-			return fail("%s must be at least %s, got %s", kind, r.param, format(got))
+		if cmp < 0 {
+			return fail("%s must be at least %s, got %s", kind, r.param, got)
 		}
 
 	case "max":
-		n, err := strconv.ParseFloat(r.param, 64)
+		cmp, kind, got, err := compare(v, r.param)
+		if errors.Is(err, errUnmeasurable) {
+			return fail("max does not apply to %s", deref(v).Kind())
+		}
 		if err != nil {
 			return fail("invalid rule %q", r.raw)
 		}
-		if got, kind := measure(v); got > n {
-			return fail("%s must be at most %s, got %s", kind, r.param, format(got))
+		if cmp > 0 {
+			return fail("%s must be at most %s, got %s", kind, r.param, got)
 		}
 
 	case "len":
-		n, err := strconv.ParseFloat(r.param, 64)
+		cmp, kind, got, err := compare(v, r.param)
+		if errors.Is(err, errUnmeasurable) {
+			return fail("len does not apply to %s", deref(v).Kind())
+		}
 		if err != nil {
 			return fail("invalid rule %q", r.raw)
 		}
-		if got, kind := measure(v); got != n {
-			return fail("%s must be exactly %s, got %s", kind, r.param, format(got))
+		if cmp != 0 {
+			return fail("%s must be exactly %s, got %s", kind, r.param, got)
 		}
 
 	case "oneof":
@@ -228,26 +258,83 @@ func (r rule) check(fieldName string, v reflect.Value) *FieldError {
 	return nil
 }
 
-// measure returns the number a bound applies to: a string's or slice's length,
-// or a number's value. The second result names it for the error message.
-func measure(v reflect.Value) (float64, string) {
+// compare orders a field against the bound written in a rule, in whatever
+// numeric domain the field itself uses: int64 for signed fields, uint64 for
+// unsigned ones, float64 only for floats, and a count for strings, slices,
+// arrays and maps.
+//
+// Doing this through float64 — one parse for every kind — is the obvious
+// implementation and it is wrong: float64 holds integers exactly only up to
+// 2^53, so `binding:"max=9007199254740993"` on an int64 field compares two
+// values that have both been rounded to the same number, and the bound silently
+// stops working. Cases like an ID or a nanosecond timestamp live well past that
+// line.
+//
+// It returns -1, 0 or +1 as the field is below, at, or above the bound, along
+// with what to call the quantity and the field's own value for the message.
+func compare(v reflect.Value, param string) (cmp int, kind, got string, err error) {
 	v = deref(v)
+
 	switch v.Kind() {
 	case reflect.String, reflect.Slice, reflect.Array, reflect.Map:
-		return float64(v.Len()), "length"
+		bound, err := strconv.ParseInt(param, 10, 64)
+		if err != nil {
+			return 0, "", "", err
+		}
+		n := int64(v.Len())
+		return cmpOrdered(n, bound), "length", strconv.FormatInt(n, 10), nil
+
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		return float64(v.Int()), "value"
+		bound, err := strconv.ParseInt(param, 10, 64)
+		if err != nil {
+			return 0, "", "", err
+		}
+		n := v.Int()
+		return cmpOrdered(n, bound), "value", strconv.FormatInt(n, 10), nil
+
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		return float64(v.Uint()), "value"
+		n := v.Uint()
+		bound, err := strconv.ParseUint(param, 10, 64)
+		if err != nil {
+			// A negative bound does not fit a uint64 but is still meaningful:
+			// every unsigned value is above it.
+			if signed, sErr := strconv.ParseInt(param, 10, 64); sErr == nil && signed < 0 {
+				return 1, "value", strconv.FormatUint(n, 10), nil
+			}
+			return 0, "", "", err
+		}
+		return cmpOrdered(n, bound), "value", strconv.FormatUint(n, 10), nil
+
 	case reflect.Float32, reflect.Float64:
-		return v.Float(), "value"
+		bound, err := strconv.ParseFloat(param, 64)
+		if err != nil {
+			return 0, "", "", err
+		}
+		n := v.Float()
+		return cmpOrdered(n, bound), "value", strconv.FormatFloat(n, 'f', -1, 64), nil
+
 	default:
-		return 0, "value"
+		// A bool, a struct, a channel: there is no number here to bound. Saying
+		// so names the mistake, where comparing against a fabricated zero would
+		// report "value must be at least 1, got 0" about a field that has no
+		// value in that sense at all.
+		return 0, "", "", errUnmeasurable
 	}
 }
 
-func format(f float64) string {
-	return strconv.FormatFloat(f, 'f', -1, 64)
+// errUnmeasurable reports a min/max/len rule on a kind that has neither a
+// length nor a numeric value.
+var errUnmeasurable = errors.New("not measurable")
+
+func cmpOrdered[T int64 | uint64 | float64](a, b T) int {
+	switch {
+	case a < b:
+		return -1
+	case a > b:
+		return 1
+	default:
+		return 0
+	}
 }
 
 func deref(v reflect.Value) reflect.Value {

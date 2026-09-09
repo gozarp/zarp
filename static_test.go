@@ -182,3 +182,107 @@ func BenchmarkStatic(b *testing.B) {
 		e.ServeHTTP(httptest.NewRecorder(), req)
 	}
 }
+
+// ---------------------------------------------------------------- SecureDir
+
+// symlink creates a link, skipping the test where the platform will not allow
+// one — Windows needs developer mode or an elevated process.
+func symlink(t *testing.T, oldname, newname string) {
+	t.Helper()
+	if err := os.Symlink(oldname, newname); err != nil {
+		t.Skipf("symlinks unavailable on this platform: %v", err)
+	}
+}
+
+func TestSecureDirRefusesSymlinkOutOfRoot(t *testing.T) {
+	outside := t.TempDir()
+	if err := os.WriteFile(filepath.Join(outside, "secret.txt"), []byte("password"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "ok.txt"), []byte("public"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	symlink(t, outside, filepath.Join(root, "escape"))
+
+	e := New()
+	e.StaticFS("/assets", SecureDir(root))
+
+	// The honest file is still served.
+	if rec := serve(e, http.MethodGet, "/assets/ok.txt"); rec.Code != 200 || rec.Body.String() != "public" {
+		t.Errorf("ok.txt: code = %d, body = %q", rec.Code, rec.Body.String())
+	}
+	// The link out of the tree is not.
+	if rec := serve(e, http.MethodGet, "/assets/escape/secret.txt"); rec.Code != 404 {
+		t.Errorf("escaping symlink: code = %d, body = %q, want 404", rec.Code, rec.Body.String())
+	}
+}
+
+func TestSecureDirAllowsSymlinkInsideRoot(t *testing.T) {
+	root := t.TempDir()
+	real := filepath.Join(root, "real")
+	if err := os.Mkdir(real, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(real, "f.txt"), []byte("inside"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	symlink(t, real, filepath.Join(root, "link"))
+
+	e := New()
+	e.StaticFS("/assets", SecureDir(root))
+
+	if rec := serve(e, http.MethodGet, "/assets/link/f.txt"); rec.Code != 200 || rec.Body.String() != "inside" {
+		t.Errorf("link inside root: code = %d, body = %q", rec.Code, rec.Body.String())
+	}
+}
+
+func TestSecureDirRejectsTraversalAndMissingRoot(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "f.txt"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	e := New()
+	e.StaticFS("/assets", SecureDir(root))
+	for _, target := range []string{"/assets/../../etc/passwd", "/assets/nope.txt"} {
+		if rec := serve(e, http.MethodGet, target); rec.Code != 404 {
+			t.Errorf("%s: code = %d, want 404", target, rec.Code)
+		}
+	}
+
+	// A root that cannot be resolved yields errors, not a panic and not a
+	// filesystem rooted somewhere unexpected.
+	missing := New()
+	missing.StaticFS("/assets", SecureDir(filepath.Join(root, "does-not-exist")))
+	if rec := serve(missing, http.MethodGet, "/assets/f.txt"); rec.Code != 404 {
+		t.Errorf("missing root: code = %d, want 404", rec.Code)
+	}
+}
+
+func TestWithinRoot(t *testing.T) {
+	root := filepath.Join(string(filepath.Separator), "srv", "public")
+	tests := []struct {
+		name   string
+		target string
+		want   bool
+	}{
+		{"the root itself", root, true},
+		{"a file in the root", filepath.Join(root, "app.css"), true},
+		{"a file further down", filepath.Join(root, "a", "b", "c.txt"), true},
+		{"the parent", filepath.Dir(root), false},
+		{"a sibling", filepath.Join(filepath.Dir(root), "private", "secret"), false},
+		// The prefix test that a plain strings.HasPrefix would get wrong:
+		// /srv/public-backup is not inside /srv/public.
+		{"a sibling sharing the prefix", root + "-backup", false},
+		{"elsewhere entirely", filepath.Join(string(filepath.Separator), "etc", "passwd"), false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := within(root, tc.target); got != tc.want {
+				t.Errorf("within(%q, %q) = %v, want %v", root, tc.target, got, tc.want)
+			}
+		})
+	}
+}

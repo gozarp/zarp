@@ -24,8 +24,11 @@ func TestNewDefaults(t *testing.T) {
 	if !e.RedirectTrailingSlash {
 		t.Error("RedirectTrailingSlash should default to true")
 	}
-	if !e.ForwardedByClientIP {
-		t.Error("ForwardedByClientIP should default to true")
+	if e.ForwardedByClientIP {
+		t.Error("ForwardedByClientIP should default to false: proxy headers are client input")
+	}
+	if e.TrustedProxies != nil {
+		t.Error("TrustedProxies should default to empty")
 	}
 	if e.HandleMethodNotAllowed {
 		t.Error("HandleMethodNotAllowed should default to false")

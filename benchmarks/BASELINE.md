@@ -16,6 +16,14 @@ go test -bench='Router|ServeMux|Context' -benchmem -run XXX -count=5 .
 go test -bench=. -benchmem -run XXX -count=5 ./middleware/ ./binding/ ./render/
 ```
 
+**Rows updated 2026-09-09, with the reason.** `binding.Query` no longer validates — binding and
+validation are separate steps now — so its row measures a bind alone and is labelled that way;
+`Validate` has its own row below. The text sink and the logger each gained a pass over the request
+path that escapes control characters, which is what stops a crafted path from forging a log line;
+it costs a few nanoseconds and no allocations. Nothing else in this file moved: the engine, router
+and context numbers were re-measured against the pre-change tree with `benchstat` over 8 runs and
+showed no significant difference.
+
 **The number that matters is allocs/op.** Ns/op moves with the machine; an allocation appearing
 where there was none is a design regression, and every 0 below is load-bearing.
 
@@ -53,7 +61,7 @@ the handler's allocation, not the framework's.
 | chain of 3 | 57.7 | 0 |
 | chain of 10 | 78.4 | 0 |
 | `Recovery` | 59.5 | 0 |
-| `Logger` (TextSink → `io.Discard`) | 346.4 | 0 |
+| `Logger` (TextSink → `io.Discard`) | 356.5 | 0 |
 | `CORS` | 229.0 | 1 |
 | `RequestID` | 516.3 | 5 |
 
@@ -99,9 +107,9 @@ exactly why they are not in the core.
 |---|---|---|
 | `render.JSON` | 318.6 | 4 |
 | `Context.JSON` (same payload) | 229.2 | 1 |
-| `binding.Query` (5 fields + validation) | 1399.4 | 7 |
+| `binding.Query` (5 fields, bind only) | 1502.6 | 7 |
 | `binding.Validate` (6 rules) | 432.8 | 4 |
-| `middleware.SinkText` | 344.4 | 0 |
+| `middleware.SinkText` | 361.6 | 0 |
 | `middleware.SinkSlog` | 1249.2 | 1 |
 
 `render.JSON` against `Context.JSON` is the price of the extensible path: an interface call plus
