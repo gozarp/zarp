@@ -77,15 +77,23 @@ func Default(method, contentType string) Binding {
 	if i := strings.IndexByte(contentType, ';'); i >= 0 {
 		contentType = contentType[:i]
 	}
-	switch strings.TrimSpace(contentType) {
-	case MIMEJSON:
+
+	// EqualFold, not a switch on the string: RFC 9110 §8.3.1 makes a media
+	// type's type and subtype case-insensitive, so "Application/JSON" names the
+	// same thing as "application/json" and a client is entitled to send either.
+	// Comparing case-insensitively also avoids lowercasing the string, which
+	// would allocate on exactly the requests that spell it unusually.
+	switch mediaType := strings.TrimSpace(contentType); {
+	case strings.EqualFold(mediaType, MIMEJSON):
 		return JSONBinding
-	case MIMEMultipart:
+	case strings.EqualFold(mediaType, MIMEMultipart):
 		return MultipartBinding
-	case MIMEPOSTForm:
+	case strings.EqualFold(mediaType, MIMEPOSTForm):
 		return FormBinding
 	default:
-		return unsupportedBinding{contentType: contentType}
+		// The unaltered spelling goes into the error, so the message shows what
+		// the client actually sent.
+		return unsupportedBinding{contentType: mediaType}
 	}
 }
 

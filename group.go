@@ -3,6 +3,7 @@ package zarp
 import (
 	"net/http"
 	"path"
+	"strconv"
 )
 
 // RouterGroup registers routes under a shared path prefix and a shared
@@ -96,7 +97,9 @@ func (g *RouterGroup) BasePath() string {
 // Handle registers handlers for an arbitrary HTTP method.
 func (g *RouterGroup) Handle(method, relativePath string, handlers ...HandlerFunc) *RouterGroup {
 	if !isValidMethod(method) {
-		panic("zarp: http method " + method + " is not valid")
+		// Quoted: the usual mistakes here are a stray space or newline, and an
+		// unquoted message would not show them.
+		panic("zarp: http method " + strconv.Quote(method) + " is not valid")
 	}
 	return g.handle(method, relativePath, handlers)
 }

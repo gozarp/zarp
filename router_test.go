@@ -2,6 +2,8 @@ package zarp
 
 import (
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 )
@@ -265,5 +267,84 @@ func BenchmarkLookupBulk(b *testing.B) {
 	for b.Loop() {
 		ps = ps[:0]
 		r.lookup("GET", "/repos/golang/go/issues/42", &ps)
+	}
+}
+
+// TestCatchAllEndToEnd pins the three-node catch-all representation from the
+// outside: a registration, a request, and the parameter the handler sees.
+//
+// The tree stores "/src/*filepath" as a static parent ending before the slash,
+// an empty intermediate, and a leaf owning "/*filepath". Reading that shape as
+// two nodes rather than three suggests the lookup returns the intermediate and
+// panics on n.path[2:]. It does not: the static parent has wildChild false, so
+// the walk reaches the intermediate through the indices scan, and only the
+// intermediate — which does have wildChild — descends to the leaf.
+func TestCatchAllEndToEnd(t *testing.T) {
+	tests := []struct{ target, want string }{
+		{"/src/", "/"},
+		{"/src/a", "/a"},
+		{"/src/a/b.go", "/a/b.go"},
+		{"/src/deeply/nested/path/file.txt", "/deeply/nested/path/file.txt"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.target, func(t *testing.T) {
+			var got string
+			seen := false
+
+			e := New()
+			e.GET("/src/*filepath", func(c *Context) {
+				got, seen = c.Param("filepath"), true
+			})
+
+			rec := httptest.NewRecorder()
+			e.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, tc.target, nil))
+
+			if !seen {
+				t.Fatalf("handler never ran; status %d", rec.Code)
+			}
+			if got != tc.want {
+				t.Errorf("filepath = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestCatchAllNodeShape(t *testing.T) {
+	e := New()
+	e.GET("/src/*filepath", func(*Context) {})
+
+	var root *node
+	for _, t := range e.trees {
+		if t.method == http.MethodGet {
+			root = t.root
+		}
+	}
+	if root == nil {
+		t.Fatal("no GET tree")
+	}
+	if root.path != "/src" || root.indices != "/" {
+		t.Fatalf("static parent: path=%q indices=%q, want \"/src\" and \"/\"", root.path, root.indices)
+	}
+	if root.wildChild {
+		t.Error("the static parent must not be the wildcard node, or the walk skips the intermediate")
+	}
+
+	mid := root.children[0]
+	if mid.path != "" || !mid.wildChild {
+		t.Fatalf("intermediate: path=%q wildChild=%v, want empty and true", mid.path, mid.wildChild)
+	}
+	if mid.handlers != nil {
+		t.Error("the intermediate must hold no handlers; the leaf owns them")
+	}
+
+	leaf := mid.children[0]
+	if leaf.path != "/*filepath" {
+		t.Errorf("leaf path = %q, want \"/*filepath\"", leaf.path)
+	}
+	if leaf.handlers == nil {
+		t.Error("leaf holds no handlers")
+	}
+	if key := leaf.path[2:]; key != "filepath" {
+		t.Errorf("param name from leaf.path[2:] = %q, want \"filepath\"", key)
 	}
 }

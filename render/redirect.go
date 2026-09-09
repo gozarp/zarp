@@ -20,8 +20,10 @@ func (r RedirectRender) WriteContentType(http.ResponseWriter) {}
 
 // Render sends the redirect, or reports a status that is not one.
 func (r RedirectRender) Render(w http.ResponseWriter) error {
-	if (r.Code < http.StatusMultipleChoices || r.Code > http.StatusPermanentRedirect) &&
-		r.Code != http.StatusCreated {
+	// 300-308 and nothing else, matching Context.Redirect. 201 is not a
+	// redirect: a created resource is answered with its own body and a Location
+	// header beside it, not through a helper whose job is to send no body.
+	if r.Code < http.StatusMultipleChoices || r.Code > http.StatusPermanentRedirect {
 		return fmt.Errorf("render: cannot redirect with status code %d", r.Code)
 	}
 	http.Redirect(w, r.Request, r.Location, r.Code)

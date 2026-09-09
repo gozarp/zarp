@@ -202,13 +202,14 @@ func (c *Context) FullPath() string {
 // map allocation, so a handler reading three parameters should pay for it once,
 // not three times.
 func (c *Context) initQueryCache() {
-	if c.queryCache == nil {
-		if c.Request != nil && c.Request.URL != nil {
-			c.queryCache = c.Request.URL.Query()
-		} else {
-			c.queryCache = url.Values{}
-		}
+	if c.queryCache != nil {
+		return
 	}
+	if c.Request == nil || c.Request.URL == nil {
+		c.queryCache = url.Values{}
+		return
+	}
+	c.queryCache = c.Request.URL.Query()
 }
 
 // Query returns the first value for key, or "".
@@ -281,7 +282,10 @@ func (c *Context) initFormCache() {
 	if err := c.Request.ParseForm(); err != nil {
 		c.formErr = err
 	}
-	if c.ContentType() == multipartContentType {
+	// EqualFold: a media type's type and subtype are case-insensitive, and a
+	// client sending "Multipart/Form-Data" would otherwise skip the multipart
+	// parse entirely and see every field come back empty.
+	if strings.EqualFold(c.ContentType(), multipartContentType) {
 		if err := c.Request.ParseMultipartForm(c.maxMultipartMemory()); err != nil &&
 			!errors.Is(err, http.ErrNotMultipart) {
 			c.formErr = err
@@ -616,12 +620,10 @@ func forwardedFor(header string, trusted []netip.Prefix) string {
 // firstValidIP returns the first parseable address in a comma-separated header.
 func firstValidIP(header string) string {
 	for len(header) > 0 {
-		var part string
-		if i := strings.IndexByte(header, ','); i >= 0 {
-			part, header = header[:i], header[i+1:]
-		} else {
-			part, header = header, ""
-		}
+		// Cut hands back the whole string and an empty remainder when there is
+		// no comma left, which is exactly the last-entry case.
+		part, rest, _ := strings.Cut(header, ",")
+		header = rest
 		if ip := strings.TrimSpace(part); validIP(ip) {
 			return ip
 		}

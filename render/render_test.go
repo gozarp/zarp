@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -325,5 +326,37 @@ func BenchmarkContextJSON(b *testing.B) {
 	for b.Loop() {
 		rec.Body.Reset()
 		e.ServeHTTP(rec, req)
+	}
+}
+
+func TestRedirectAcceptsOnly3xx(t *testing.T) {
+	for _, code := range []int{300, 301, 302, 303, 307, 308} {
+		t.Run(strconv.Itoa(code), func(t *testing.T) {
+			var err error
+			rec := serve(func(c *zarp.Context) {
+				err = render.Redirect(c, code, "/elsewhere")
+			})
+			if err != nil {
+				t.Fatalf("Redirect(%d): %v", code, err)
+			}
+			if rec.Code != code {
+				t.Errorf("code = %d, want %d", rec.Code, code)
+			}
+		})
+	}
+
+	// 201 is not a redirect. Context.Redirect rejects it and the renderer must
+	// agree — one API saying yes where the other says no is worse than either
+	// answer on its own.
+	for _, code := range []int{200, 201, 204, 400, 500} {
+		t.Run("rejects "+strconv.Itoa(code), func(t *testing.T) {
+			var err error
+			serve(func(c *zarp.Context) {
+				err = render.Redirect(c, code, "/elsewhere")
+			})
+			if err == nil {
+				t.Errorf("Redirect(%d) was accepted", code)
+			}
+		})
 	}
 }

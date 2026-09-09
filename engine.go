@@ -162,6 +162,12 @@ func (e *Engine) handleRequest(c *Context) {
 
 	// The same path with a trailing slash added or removed is registered.
 	// CONNECT targets an authority, not a path, so it is never redirected.
+	//
+	// Four operands would usually be worth naming, and this is the exception:
+	// lifting them into two booleans measured +8.3% on BenchmarkEngineStatic
+	// (p=0.000, n=10) — a route that never reaches this branch, so the cost is
+	// handleRequest being laid out differently, not the test itself. Readability
+	// buys nothing here that the comment above does not.
 	if tsr && e.RedirectTrailingSlash && method != http.MethodConnect && path != "/" {
 		e.redirectTrailingSlash(c)
 		return

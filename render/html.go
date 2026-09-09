@@ -32,16 +32,20 @@ func (r HTMLRender) Render(w http.ResponseWriter) error {
 	// Execute into a buffer first. A template that fails half way through has
 	// already written part of a page, and the status is long gone — better to
 	// find out before any of it reaches the client.
-	var buf bytes.Buffer
+	var (
+		buf bytes.Buffer
+		err error
+	)
 	if r.Name == "" {
-		if err := r.Template.Execute(&buf, r.Data); err != nil {
-			return err
-		}
-	} else if err := r.Template.ExecuteTemplate(&buf, r.Name, r.Data); err != nil {
+		err = r.Template.Execute(&buf, r.Data)
+	} else {
+		err = r.Template.ExecuteTemplate(&buf, r.Name, r.Data)
+	}
+	if err != nil {
 		return err
 	}
 
-	_, err := w.Write(buf.Bytes())
+	_, err = w.Write(buf.Bytes())
 	return err
 }
 

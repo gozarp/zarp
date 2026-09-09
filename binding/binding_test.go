@@ -709,3 +709,43 @@ func TestFormBindingReportsAParseFailure(t *testing.T) {
 		t.Fatalf("malformed form body bound cleanly as %+v", got)
 	}
 }
+
+func TestDefaultMatchesMediaTypeCaseInsensitively(t *testing.T) {
+	// RFC 9110 §8.3.1: a media type's type and subtype are case-insensitive,
+	// so a client may spell them however it likes.
+	tests := []struct{ contentType, want string }{
+		{"application/json", "json"},
+		{"Application/JSON", "json"},
+		{"APPLICATION/JSON", "json"},
+		{"APPLICATION/JSON; charset=utf-8", "json"},
+		{"Application/Json ; charset=utf-8", "json"},
+		{"multipart/form-data; boundary=x", "multipart"},
+		{"Multipart/Form-Data; boundary=x", "multipart"},
+		{"MULTIPART/FORM-DATA; boundary=x", "multipart"},
+		{"application/x-www-form-urlencoded", "form"},
+		{"Application/X-WWW-Form-Urlencoded", "form"},
+		// Still unsupported, whatever the casing.
+		{"application/xml", "unsupported"},
+		{"Application/XML", "unsupported"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.contentType, func(t *testing.T) {
+			if got := binding.Default(http.MethodPost, tc.contentType).Name(); got != tc.want {
+				t.Errorf("Default(POST, %q) = %s, want %s", tc.contentType, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestBindAcceptsAMixedCaseJSONContentType(t *testing.T) {
+	var got user
+	_, err := run(t, "POST", "/u/1", `{"name":"octocat"}`, "Application/JSON; charset=utf-8",
+		func(c *zarp.Context) error { return binding.Bind(c, &got) })
+
+	if err != nil {
+		t.Fatalf("mixed-case Content-Type rejected: %v", err)
+	}
+	if got.Name != "octocat" {
+		t.Errorf("name = %q", got.Name)
+	}
+}

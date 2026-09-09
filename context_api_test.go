@@ -807,3 +807,33 @@ func TestRedirectAcceptsOnly3xx(t *testing.T) {
 		})
 	}
 }
+
+func TestMultipartParsesWithAnyMediaTypeCasing(t *testing.T) {
+	// A media type is case-insensitive. If the multipart check were an exact
+	// string compare, this body would be skipped and every field would come
+	// back empty — a silent wrong answer rather than an error.
+	for _, mediaType := range []string{"multipart/form-data", "Multipart/Form-Data", "MULTIPART/FORM-DATA"} {
+		t.Run(mediaType, func(t *testing.T) {
+			var body bytes.Buffer
+			w := multipart.NewWriter(&body)
+			if err := w.WriteField("name", "octocat"); err != nil {
+				t.Fatal(err)
+			}
+			w.Close()
+
+			contentType := strings.Replace(w.FormDataContentType(), "multipart/form-data", mediaType, 1)
+			req := httptest.NewRequest(http.MethodPost, "/x", &body)
+			req.Header.Set("Content-Type", contentType)
+
+			c := &Context{}
+			c.reset(httptest.NewRecorder(), req)
+
+			if got := c.PostForm("name"); got != "octocat" {
+				t.Errorf("PostForm(name) = %q, want %q", got, "octocat")
+			}
+			if err := c.FormError(); err != nil {
+				t.Errorf("FormError = %v", err)
+			}
+		})
+	}
+}
