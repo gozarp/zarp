@@ -749,3 +749,46 @@ func TestBindAcceptsAMixedCaseJSONContentType(t *testing.T) {
 		t.Errorf("name = %q", got.Name)
 	}
 }
+
+func TestBinderAccessorsAreStableAndUsable(t *testing.T) {
+	// The binders are reached through functions rather than exported variables,
+	// so an importer cannot swap one out for the whole process. What the
+	// functions must still guarantee is that they hand back the same binder
+	// every time — a fresh one per call would allocate on every bind.
+	accessors := map[string]func() binding.Binding{
+		"json":      binding.JSONBinding,
+		"query":     binding.QueryBinding,
+		"form":      binding.FormBinding,
+		"multipart": binding.MultipartBinding,
+		"uri":       binding.URIBinding,
+		"header":    binding.HeaderBinding,
+	}
+	for name, accessor := range accessors {
+		t.Run(name, func(t *testing.T) {
+			b := accessor()
+			if b == nil {
+				t.Fatal("accessor returned nil")
+			}
+			if b.Name() != name {
+				t.Errorf("Name() = %q, want %q", b.Name(), name)
+			}
+			if b != accessor() {
+				t.Error("two calls returned different binders; each bind would allocate one")
+			}
+		})
+	}
+}
+
+func TestJSONBindingCarriesTheDefaultConfig(t *testing.T) {
+	// The default binder must be the safe one: a 4 MB cap, not an unbounded
+	// decode.
+	var got user
+	body := `{"name":"` + strings.Repeat("x", int(binding.DefaultMaxBodyBytes)+1) + `"}`
+
+	_, err := run(t, "POST", "/u/1", body, binding.MIMEJSON,
+		func(c *zarp.Context) error { return binding.With(c, &got, binding.JSONBinding()) })
+
+	if err == nil || !strings.Contains(err.Error(), "exceeds") {
+		t.Errorf("err = %v, want the default body cap to reject an oversized body", err)
+	}
+}

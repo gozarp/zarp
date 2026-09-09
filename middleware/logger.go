@@ -211,6 +211,15 @@ var lineBuffers = sync.Pool{
 	},
 }
 
+// maxPooledLine stops one enormous line from pinning an enormous buffer.
+//
+// A log line is a couple of hundred bytes, except when the path is the client's
+// own URL — which it is on a route miss, and which net/http bounds only by
+// MaxHeaderBytes, a megabyte by default. Returning that buffer to the pool would
+// keep the megabyte for the life of the process, per P. Above this size the
+// buffer is dropped and the next request allocates a fresh, small one.
+const maxPooledLine = 4 << 10
+
 func writeText(out io.Writer, e Entry) {
 	bufPtr := lineBuffers.Get().(*[]byte)
 	b := (*bufPtr)[:0]
@@ -231,6 +240,14 @@ func writeText(out io.Writer, e Entry) {
 
 	_, _ = out.Write(b)
 
+	releaseLine(bufPtr, b)
+}
+
+// releaseLine returns a buffer to the pool unless it grew past maxPooledLine.
+func releaseLine(bufPtr *[]byte, b []byte) {
+	if cap(b) > maxPooledLine {
+		return
+	}
 	*bufPtr = b
 	lineBuffers.Put(bufPtr)
 }

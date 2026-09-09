@@ -3,6 +3,7 @@ package zarp
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -51,6 +52,16 @@ type ResponseWriter interface {
 	WriteHeaderNow()
 	Unwrap() http.ResponseWriter
 }
+
+var (
+	// A Context is passed anywhere a context.Context is expected — to a database
+	// driver, an outbound request, anything taking one — so losing a method of
+	// that interface has to fail here rather than at a call site.
+	_ context.Context = (*Context)(nil)
+
+	// The pooled writer has to keep satisfying the interface handlers see.
+	_ ResponseWriter = (*responseWriter)(nil)
+)
 
 // responseWriter wraps the http.ResponseWriter handed to ServeHTTP and records
 // what was done to it, so middleware can log the status and size after the

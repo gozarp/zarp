@@ -35,6 +35,9 @@ Five decisions the code depends on, each of which looks like a bug until you kno
   for a malformed body and 422 for an unacceptable one.
 - **Proxy headers are not trusted by default.** `ForwardedByClientIP` is off, and turning it on
   without `TrustedProxies` means "believe anyone". Do not flip either for convenience in a test.
+- **The binders are functions, not variables.** `binding.JSONBinding()` returns a shared immutable
+  binder; there is deliberately no exported variable to reassign, because one import swapping it
+  would change decoding for the whole program. Per-route settings come from `JSONWith`.
 - **An Engine is configured, then served.** Route registration and the config fields are read
   without a lock by `ServeHTTP`, deliberately — a mutex on every lookup would cost every request.
   Mutating either while serving is a data race, and the fix is never to add the lock.

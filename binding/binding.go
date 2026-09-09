@@ -17,6 +17,11 @@
 // Bind picks a binder from the request method and Content-Type, which is what
 // most handlers want.
 //
+// The binders themselves are reached through functions — binding.JSONBinding(),
+// binding.QueryBinding() and so on — rather than exported variables, so no
+// import can reassign one and change how the rest of the program decodes its
+// requests. JSONWith builds a binder with settings of your own.
+//
 // Binding and validation are separate steps. Every function here parses and
 // nothing more; BindAndValidate runs the `binding` tag rules afterwards, and
 // Validate can be called on its own for a value assembled by hand. Keeping them
@@ -42,16 +47,44 @@ type Binding interface {
 	Bind(c *zarp.Context, obj any) error
 }
 
-// The available bindings. Bind and the shorthand functions below cover the
-// common cases; these are exported for handlers that need to choose at runtime.
+// The package's binders, built once. They are values behind an interface rather
+// than exported variables so that no importer can reassign one: a binder swapped
+// out at run time would change how every other package in the program decodes
+// its requests, and would be a data race if it happened after serving started.
+// Reach for JSONWith to configure a binder of your own.
+//
+// Every binder in this package is also checked against Binding at compile time
+// here, so one that stops satisfying the interface fails to build rather than
+// failing wherever it is passed to With.
 var (
-	JSONBinding      Binding = JSONWith(JSONConfig{})
-	QueryBinding     Binding = queryBinding{}
-	FormBinding      Binding = formBinding{}
-	MultipartBinding Binding = multipartBinding{}
-	URIBinding       Binding = uriBinding{}
-	HeaderBinding    Binding = headerBinding{}
+	jsonBinder      Binding = JSONWith(JSONConfig{})
+	queryBinder     Binding = queryBinding{}
+	formBinder      Binding = formBinding{}
+	multipartBinder Binding = multipartBinding{}
+	uriBinder       Binding = uriBinding{}
+	headerBinder    Binding = headerBinding{}
+
+	_ Binding = unsupportedBinding{}
 )
+
+// JSONBinding returns the default JSON binder: a 4 MB body cap, numbers decoded
+// normally, unknown fields ignored. JSONWith builds one with other settings.
+func JSONBinding() Binding { return jsonBinder }
+
+// QueryBinding returns the binder reading the URL query string.
+func QueryBinding() Binding { return queryBinder }
+
+// FormBinding returns the binder reading a urlencoded body.
+func FormBinding() Binding { return formBinder }
+
+// MultipartBinding returns the binder reading a multipart body's values.
+func MultipartBinding() Binding { return multipartBinder }
+
+// URIBinding returns the binder reading the matched route parameters.
+func URIBinding() Binding { return uriBinder }
+
+// HeaderBinding returns the binder reading request headers.
+func HeaderBinding() Binding { return headerBinder }
 
 // Content types Default recognises.
 const (
@@ -71,7 +104,7 @@ const (
 func Default(method, contentType string) Binding {
 	switch method {
 	case http.MethodGet, http.MethodHead, http.MethodDelete, http.MethodOptions:
-		return QueryBinding
+		return queryBinder
 	}
 
 	if i := strings.IndexByte(contentType, ';'); i >= 0 {
@@ -85,11 +118,11 @@ func Default(method, contentType string) Binding {
 	// would allocate on exactly the requests that spell it unusually.
 	switch mediaType := strings.TrimSpace(contentType); {
 	case strings.EqualFold(mediaType, MIMEJSON):
-		return JSONBinding
+		return jsonBinder
 	case strings.EqualFold(mediaType, MIMEMultipart):
-		return MultipartBinding
+		return multipartBinder
 	case strings.EqualFold(mediaType, MIMEPOSTForm):
-		return FormBinding
+		return formBinder
 	default:
 		// The unaltered spelling goes into the error, so the message shows what
 		// the client actually sent.
@@ -161,20 +194,20 @@ func With(c *zarp.Context, obj any, b Binding) error {
 }
 
 // JSON parses a JSON body into obj.
-func JSON(c *zarp.Context, obj any) error { return With(c, obj, JSONBinding) }
+func JSON(c *zarp.Context, obj any) error { return With(c, obj, jsonBinder) }
 
 // Query parses the URL query string into obj, using `form` tags.
-func Query(c *zarp.Context, obj any) error { return With(c, obj, QueryBinding) }
+func Query(c *zarp.Context, obj any) error { return With(c, obj, queryBinder) }
 
 // Form parses a urlencoded body into obj, using `form` tags.
-func Form(c *zarp.Context, obj any) error { return With(c, obj, FormBinding) }
+func Form(c *zarp.Context, obj any) error { return With(c, obj, formBinder) }
 
 // Multipart parses a multipart body's values into obj, using `form` tags.
 // Uploaded files are read with Context.FormFile rather than bound.
-func Multipart(c *zarp.Context, obj any) error { return With(c, obj, MultipartBinding) }
+func Multipart(c *zarp.Context, obj any) error { return With(c, obj, multipartBinder) }
 
 // URI parses the matched route parameters into obj, using `uri` tags.
-func URI(c *zarp.Context, obj any) error { return With(c, obj, URIBinding) }
+func URI(c *zarp.Context, obj any) error { return With(c, obj, uriBinder) }
 
 // Header parses request headers into obj, using `header` tags.
-func Header(c *zarp.Context, obj any) error { return With(c, obj, HeaderBinding) }
+func Header(c *zarp.Context, obj any) error { return With(c, obj, headerBinder) }

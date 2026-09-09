@@ -12,6 +12,11 @@ const (
 	default405Body = "405 method not allowed"
 )
 
+// Engine's whole integration story is that it is an ordinary http.Handler.
+// Asserted here so breaking it is a compile error rather than a surprise at
+// whatever line first passes an *Engine to net/http.
+var _ http.Handler = (*Engine)(nil)
+
 // Engine ties the router, the Context pool and the handler chain together. It
 // implements http.Handler, which is the real integration point: users wanting
 // timeouts or graceful shutdown build their own http.Server around it.

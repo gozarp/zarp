@@ -24,12 +24,12 @@ func bindQuery(t *testing.T, query string, target any) error {
 
 func TestBindingNames(t *testing.T) {
 	want := map[binding.Binding]string{
-		binding.JSONBinding:      "json",
-		binding.QueryBinding:     "query",
-		binding.FormBinding:      "form",
-		binding.MultipartBinding: "multipart",
-		binding.URIBinding:       "uri",
-		binding.HeaderBinding:    "header",
+		binding.JSONBinding():      "json",
+		binding.QueryBinding():     "query",
+		binding.FormBinding():      "form",
+		binding.MultipartBinding(): "multipart",
+		binding.URIBinding():       "uri",
+		binding.HeaderBinding():    "header",
 	}
 	for b, name := range want {
 		if got := b.Name(); got != name {
@@ -220,7 +220,7 @@ func TestJSONUseNumber(t *testing.T) {
 func TestJSONNilBody(t *testing.T) {
 	c := &zarp.Context{}
 	var target struct{}
-	if err := binding.JSONBinding.Bind(c, &target); !errors.Is(err, binding.ErrEmptyBody) {
+	if err := binding.JSONBinding().Bind(c, &target); !errors.Is(err, binding.ErrEmptyBody) {
 		t.Errorf("err = %v, want ErrEmptyBody for a nil request", err)
 	}
 }
@@ -338,7 +338,7 @@ func TestHeaderBindingWithoutRequest(t *testing.T) {
 	var target struct {
 		X string `header:"X-Thing"`
 	}
-	if err := binding.HeaderBinding.Bind(c, &target); err != nil {
+	if err := binding.HeaderBinding().Bind(c, &target); err != nil {
 		t.Errorf("err = %v, want a nil request to bind nothing", err)
 	}
 	if target.X != "" {
