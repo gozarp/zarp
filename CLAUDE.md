@@ -15,7 +15,7 @@ The framework is complete and tested: radix router, pooled `Context`, `Engine`, 
 middleware chain, static file serving, plus the optional `binding/`, `render/` and `middleware/`
 packages. Clean under `-race`, allocation-free on the paths the benchmarks cover.
 
-Pre-release: the API is not frozen and nothing is tagged. Renaming or resigning an exported symbol
+`v0.1.0` is tagged; the API is not frozen. Renaming or resigning an exported symbol
 is still allowed, but it should be a considered change, not a drive-by.
 
 Several externally-reported "defects" have been checked against the source and deliberately
@@ -131,6 +131,8 @@ zarp/
 ├── middleware/         logger, recovery, cors, requestid, maxbody, timeout
 ├── examples/           runnable example apps
 ├── benchmarks/         end-to-end perf suite plus BASELINE.md, run explicitly via -bench
+├── CHANGELOG/          one file per release, CHANGELOG-<version>.md; see its README
+├── ROADMAP.md          what is implemented, what comes next, what was declined and why
 └── *_test.go           unit tests colocated with source at root
 ```
 

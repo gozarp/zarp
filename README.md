@@ -14,6 +14,7 @@
   <img alt="Dependencies: zero" src="https://img.shields.io/badge/dependencies-zero-blue">
   <img alt="allocs/op: 0" src="https://img.shields.io/badge/allocs%2Fop-0-brightgreen">
   <img alt="Coverage: 96%" src="https://img.shields.io/badge/coverage-96%25-brightgreen">
+  <img alt="Release: v0.1.0" src="https://img.shields.io/badge/release-v0.1.0-blue">
   <img alt="Status: pre-alpha" src="https://img.shields.io/badge/status-pre--alpha-orange">
 </p>
 
@@ -41,26 +42,31 @@ r.Run(":8080")
 | **Allocations** | 0 on the routing, chain and response paths the benchmarks cover |
 | **Dependencies** | none, in any package — asserted by CI, not by convention |
 | **Security scanning** | `gosec` and `govulncheck` run on every push |
-| **API** | **not frozen** — no tagged release yet |
+| **API** | **not frozen** — `v0.1.0` is a `v0.x` tag |
 
-There is no `v0.1.0` tag, so `go get` resolves to a commit. **Pin one** if you build against it
-today, and read the release notes when a tag lands: the pre-tag window is being used deliberately
-to fix defaults and signatures that would be expensive to change afterwards.
+`v0.1.0` is tagged, so `go get github.com/gozarp/zarp@v0.1.0` pins a real version rather than a
+commit. The API is still not frozen: before `v1.0.0`, an exported symbol can be renamed or
+resigned, and the release notes will say so when it happens.
 
-What that instability has bought so far: proxy headers are no longer trusted by default, request
-binding no longer validates behind your back, media types match case-insensitively, JSON bodies are
-capped and rejected if they carry a second document, and `Redirect` no longer accepts a status that
-is not a redirect. Those were all breaking changes, and all cheaper now than later.
+The pre-tag window was used deliberately to fix defaults and signatures that would be expensive to
+change later. What that bought: proxy headers are no longer trusted by default, request binding no
+longer validates behind your back, media types match case-insensitively, JSON bodies are capped and
+rejected if they carry a second document, and `Redirect` no longer accepts a status that is not a
+redirect. Those were all breaking changes, and all cheaper then than now.
+
+Full notes in [`CHANGELOG/CHANGELOG-0.1.0.md`](CHANGELOG/CHANGELOG-0.1.0.md); what comes next is in
+[`ROADMAP.md`](ROADMAP.md).
 
 ---
 
 ## 📦 Installation
 
 ```sh
-go get github.com/gozarp/zarp
+go get github.com/gozarp/zarp@v0.1.0
 ```
 
-Go 1.25 or later. The core package imports only the standard library; `binding/`, `render/` and
+Go 1.25 or later — and keep the patch current, since `Engine.Run` reaches standard-library code
+fixed in go1.25.3. The core package imports only the standard library; `binding/`, `render/` and
 `middleware/` are separate imports you opt into.
 
 ---
@@ -657,6 +663,8 @@ zarp/
 ├── middleware/                logger, recovery, cors, requestid, maxbody, timeout
 ├── examples/                  five runnable apps
 ├── benchmarks/                end-to-end perf suite plus BASELINE.md
+├── CHANGELOG/                 one file per release
+├── ROADMAP.md                 what is built and what comes next
 ├── CONTRIBUTING.md            how to work on it
 └── CLAUDE.md                  design constraints and conventions
 ```
