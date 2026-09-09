@@ -141,10 +141,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          # The newest patch of the oldest minor this module supports, so
+          # govulncheck judges the standard library the way a user on our
+          # stated minimum would see it.
+          go-version: '1.25'
 
       # gosec reads the code: unchecked errors on security-relevant calls,
       # narrowing integer conversions, servers started without timeouts. It
-      # runs in its own container, so no Go setup is needed here.
+      # runs in its own container, so it needs no Go of its own.
       #
       # The findings that are deliberate carry a "#nosec" annotation naming the
       # rule and the reason, and the run prints how many suppressions it
@@ -159,12 +165,13 @@ jobs:
       # a Go release fixing a vulnerability in a package zarp calls, and it
       # reports only the ones reachable from this code.
       #
-      # It installs its own Go and would check the repository out again;
-      # neither is wanted, and caching has nothing to cache without a go.sum.
+      # Run directly rather than through golang/govulncheck-action: that action
+      # always installs @latest while pinning GOTOOLCHAIN=local, and @latest now
+      # requires Go 1.26, so it cannot run against the 1.25 this job wants.
+      #
+      # v1.7.0 is the last release that builds with Go 1.25. Pinning the
+      # analyser does not stale the findings — the vulnerability database is
+      # fetched from vuln.go.dev at run time. Bump this together with the
+      # module's minimum Go version, not before.
       - name: govulncheck
-        uses: golang/govulncheck-action@v1.1.0
-        with:
-          go-version-input: '1.25'
-          go-package: ./...
-          repo-checkout: false
-          cache: false
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./...

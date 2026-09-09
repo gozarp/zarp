@@ -49,7 +49,7 @@ go test -race ./...
 go test -cover . ./binding ./render ./middleware   # must stay at or above 90%
 
 gosec ./...                                        # must report 0 issues
-go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./...
 ```
 
 CI runs both scanners. `gosec` reads the code for insecure patterns;
@@ -57,6 +57,14 @@ CI runs both scanners. `gosec` reads the code for insecure patterns;
 alone — so in practice it watches for a Go release that fixes something zarp
 calls. Suppressing a gosec finding means a `#nosec` comment naming the rule and
 saying why, and the run prints how many suppressions it honoured.
+
+`govulncheck` judges the standard library of whichever Go you run it with, so a
+toolchain that is behind on patch releases reports vulnerabilities that a
+current one does not. If it flags a pile of `Fixed in ...@go1.25.x` entries,
+update your Go before reading further — the finding is about your toolchain,
+not about this code. It is pinned to v1.7.0 because that is the last release
+that builds with Go 1.25; the vulnerability data still comes from vuln.go.dev
+at run time.
 
 On Windows, ThreadSanitizer often fails to start (`ThreadSanitizer failed to allocate ... error
 code: 87`). Run the race detector under Linux; CI's race job is the authoritative one:
