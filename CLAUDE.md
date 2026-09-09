@@ -160,3 +160,12 @@ zarp/
 - Exported symbols carry doc comments; `revive`'s `exported` rule is on in `.golangci.yml`.
 - Ignoring an error is written `_, _ = w.Write(b)`, not left bare — the intent should be visible,
   and `errcheck` is on.
+
+## Commit conventions
+
+- **No AI attribution anywhere in the history.** Commit messages, tag messages and PR bodies carry
+  no `Co-Authored-By: Claude ...` trailer and no equivalent. GitHub builds its contributor list
+  from authorship *and* co-author trailers, and this project is attributed to its author alone.
+  Amends and rebases preserve an existing trailer silently, so rewrite the message rather than
+  reusing it.
+- `CLAUDE.md` is a tracked file and a commit subject naming it is not an attribution.
