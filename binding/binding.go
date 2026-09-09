@@ -1,3 +1,7 @@
+// Copyright 2026 Subhanjan Adhikary. All rights reserved.
+// Use of this source code is governed by a MIT style
+// license that can be found in the LICENSE file.
+
 // Package binding parses HTTP requests into Go structs.
 //
 // It is an optional import: zarp's core never depends on it, so a program

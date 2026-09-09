@@ -1,3 +1,7 @@
+// Copyright 2026 Subhanjan Adhikary. All rights reserved.
+// Use of this source code is governed by a MIT style
+// license that can be found in the LICENSE file.
+
 // Command middleware shows the chain: stock middleware, groups, a custom auth
 // guard that aborts, and a logger sink pointed at log/slog.
 //

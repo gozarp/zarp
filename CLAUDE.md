@@ -160,6 +160,17 @@ zarp/
 - Exported symbols carry doc comments; `revive`'s `exported` rule is on in `.golangci.yml`.
 - Ignoring an error is written `_, _ = w.Write(b)`, not left bare — the intent should be visible,
   and `errcheck` is on.
+- **Every `.go` file opens with the copyright header**, followed by a blank line. The blank line is
+  load-bearing: without it the notice is absorbed into the package or command doc comment and shows
+  up on pkg.go.dev. New files, tests and examples included, carry it too.
+
+  ```go
+  // Copyright 2026 Subhanjan Adhikary. All rights reserved.
+  // Use of this source code is governed by a MIT style
+  // license that can be found in the LICENSE file.
+
+  package zarp
+  ```
 
 ## Commit conventions
 

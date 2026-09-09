@@ -1,3 +1,7 @@
+// Copyright 2026 Subhanjan Adhikary. All rights reserved.
+// Use of this source code is governed by a MIT style
+// license that can be found in the LICENSE file.
+
 // Package benchmarks holds zarp's end-to-end performance suite.
 //
 // It is a separate package so `go test ./...` stays fast, and it imports

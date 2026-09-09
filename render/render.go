@@ -1,3 +1,7 @@
+// Copyright 2026 Subhanjan Adhikary. All rights reserved.
+// Use of this source code is governed by a MIT style
+// license that can be found in the LICENSE file.
+
 // Package render writes typed responses: JSON, XML, HTML, plain text.
 //
 // It is an optional import. zarp's core carries its own Context.JSON,
